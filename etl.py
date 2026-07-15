@@ -320,10 +320,16 @@ REDEV_ZONES = {
 seg2zone={}
 for z,info in REDEV_ZONES.items():
     for s in info["segs"]: seg2zone[s]=z
+# 建案層級校正：地段跨馬路邊界時，指定建案直接歸到正確重劃區(覆蓋地段判斷)
+PROJ_ZONE_OVERRIDE = {
+    "宜誠泱": "青埔A17領航站",   # 青昇段但在青昇路東=A17
+}
+def zone_of(r):
+    return PROJ_ZONE_OVERRIDE.get(r.get("proj")) or seg2zone.get(r.get("seg",""))
 def zone_agg(rows, clean=False):
     g=defaultdict(list)
     for r in rows:
-        z=seg2zone.get(r.get("seg",""))
+        z=zone_of(r)
         if not z: continue
         if clean and not clean_ok(r): continue
         g[z].append(r)
@@ -364,7 +370,7 @@ dump("trends.json", trends)
 def zone_trend(rows, clean=False):
     g=defaultdict(lambda: defaultdict(list))
     for r in rows:
-        z=seg2zone.get(r.get("seg",""))
+        z=zone_of(r)
         if not z: continue
         if clean and not clean_ok(r): continue
         q=quarter(r["date"])
@@ -383,7 +389,7 @@ dump("zone_trends.json", zone_trends)
 def zone_breakdown(rows):
     g=defaultdict(lambda: defaultdict(list))
     for r in rows:
-        z=seg2zone.get(r.get("seg",""))
+        z=zone_of(r)
         if not z or not clean_ok(r): continue
         g[z][r.get("proj") or "（未對到建案名）"].append(r)
     out={}
@@ -404,7 +410,7 @@ dump("zone_breakdown.json", zone_breakdown_data)
 def zone_tx_build(rows):
     g=defaultdict(list)
     for r in rows:
-        z=seg2zone.get(r.get("seg",""))
+        z=zone_of(r)
         if not z or not clean_ok(r): continue
         g[z].append([r.get("proj") or "", r["addr"] or "", r["date"], r["unit"], r.get("total"),
                      f'{r.get("rm",0)}房{r.get("hl",0)}廳{r.get("ba",0)}衛'])
