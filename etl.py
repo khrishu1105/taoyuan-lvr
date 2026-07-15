@@ -257,6 +257,24 @@ for (d,z),lst in gl.items():
 land_area.sort(key=lambda x:-x["cnt"])
 dump("land_area.json", land_area)
 
+# ================= 地圖：各行政區彙總(每品項 成交量/中位單價/均總價) =================
+def district_agg(rows, clean=False):
+    g=defaultdict(list)
+    for r in rows:
+        if clean and not (r.get("resi") and not r.get("special")): continue
+        g[r["d"]].append(r)
+    out={}
+    for d,lst in g.items():
+        pr=[x["unit"] for x in lst if x["unit"] and x["unit"]>0]
+        tots=[x["total"] for x in lst if x["total"]]
+        out[d]={"n":len(lst),"med":round(statistics.median(pr),1) if pr else None,
+                "avgtot":round(statistics.mean(tots)) if tots else None}
+    return out
+map_agg={"presale":district_agg([x for x in presale if not x["term"]],clean=True),
+         "resale":district_agg(RESALE_KEEP,clean=True),
+         "land":district_agg(land)}
+dump("map_agg.json", map_agg)
+
 # ================= meta =================
 seasons=sorted(set([r["season"] for r in presale]+[r["season"] for r in resale]+[r["season"] for r in land]))
 districts=sorted(set([r["d"] for r in presale]+[r["d"] for r in resale]+[r["d"] for r in land]))

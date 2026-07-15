@@ -13,3 +13,6 @@ data/transactions.json
 
 # 單機版打包檔（體積大、可用 build_standalone.py 重產；如需分享再自行加入）
 *單機版*.html
+
+# 截圖測試暫存
+_maptest.html

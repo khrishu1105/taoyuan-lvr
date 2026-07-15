@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>桃園實登查詢站 · 貝多房地產</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
   :root{
     --navy:#0d2b45;--navy2:#123a5e;--blue:#1a6fb0;--blue-l:#e8f1f9;
@@ -100,6 +102,14 @@
   .pager button:disabled{opacity:.4;cursor:default}
   footer{color:var(--sub);font-size:11.5px;padding:24px 0 44px;line-height:1.75}
   footer b{color:var(--ink)}
+  #map{height:560px;border-radius:12px;border:1px solid var(--line);box-shadow:var(--shadow);z-index:1}
+  .maplegend{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--sub);margin:12px 0 4px}
+  .maplegend .bar{height:12px;width:180px;border-radius:6px;background:linear-gradient(90deg,#2e9e5b,#e0a52b,#d0452b)}
+  .leaflet-popup-content{font-family:inherit;font-size:13px}
+  .leaflet-popup-content b{color:var(--navy)}
+  .maptip{background:transparent!important;border:none!important;box-shadow:none!important;color:#fff;
+    font-weight:700;font-size:11px;text-shadow:0 1px 3px rgba(0,0,0,.7);padding:0}
+  .maptip::before{display:none!important}
   @media(max-width:860px){.stats{grid-template-columns:repeat(2,1fr)}.hidem{display:none}
     .bar-inner{min-height:auto;padding:8px 0}.tabs{margin-left:0;width:100%}.tab{flex:1;justify-content:center;padding:8px 8px}
     thead th{position:static}}
@@ -146,6 +156,7 @@ const TABS=[
   {id:"resale", label:"中古/成屋",color:"var(--resale)"},
   {id:"land",   label:"土地",color:"var(--land)"},
   {id:"bargain",label:"檢便宜",color:"var(--good)"},
+  {id:"map",    label:"地圖",color:"var(--navy)"},
 ];
 
 const SOURCE = `資料源：<b>內政部不動產成交案件實際資訊</b>（實價登錄開放資料·每旬更新）· 桃園市`;
@@ -176,7 +187,7 @@ function switchTab(t){
   TAB=t;
   document.querySelectorAll(".tab").forEach(el=>el.classList.toggle("on",el.dataset.t===t));
   setSub(t);
-  ({presale:renderPresale,resale:renderResale,land:renderLand,bargain:renderBargains})[t]();
+  ({presale:renderPresale,resale:renderResale,land:renderLand,bargain:renderBargains,map:renderMap})[t]();
 }
 
 function distOptions(){return `<option value="">全部</option>`+META.districts.map(d=>`<option>${d}</option>`).join("");}
@@ -430,6 +441,61 @@ function gRow(r){return `<tr>
   <td><b style="color:var(--good)">${r[8]}%</b></td>
   <td>${r[7]!=null?r[7].toLocaleString():'<span class="muted">—</span>'}</td>
   <td class="l"><span class="rng">${r[2]||''}</span></td></tr>`;}
+
+/* ================= 地圖（行政區泡泡：大小=成交量、顏色=中位單價） ================= */
+const CENTROIDS={"桃園區":[24.9937,121.3009],"中壢區":[24.9576,121.2251],"平鎮區":[24.9192,121.2166],
+  "八德區":[24.9285,121.2849],"楊梅區":[24.9077,121.1457],"蘆竹區":[25.0456,121.2920],
+  "大溪區":[24.8804,121.2870],"龍潭區":[24.8637,121.2160],"龜山區":[25.0110,121.3370],
+  "大園區":[25.0603,121.1975],"觀音區":[25.0336,121.0857],"新屋區":[24.9717,121.1060],"復興區":[24.6210,121.3500]};
+const MK_LABEL={presale:"預售屋",resale:"中古/成屋",land:"土地"};
+let LMAP=null, LLAYER=null;
+function mix(a,b,t){return a.map((x,i)=>Math.round(x+(b[i]-x)*t));}
+function heat(v,min,max){const t=Math.max(0,Math.min(1,(v-min)/((max-min)||1)));
+  const c=t<0.5?mix([46,158,91],[224,165,43],t*2):mix([224,165,43],[208,69,43],(t-0.5)*2);
+  return `rgb(${c[0]},${c[1]},${c[2]})`;}
+async function renderMap(){
+  if(typeof L==='undefined'){document.getElementById("stats").innerHTML="";document.getElementById("filters").innerHTML="";
+    document.getElementById("tablewrap").innerHTML=`<div class="loading">地圖元件需要網路連線載入（Leaflet/OSM）。離線時請改用其他分頁。</div>`;return;}
+  const AGG=await load("map_agg");
+  const s=state.map=state.map||{mk:"presale"};
+  document.getElementById("stats").innerHTML="";
+  document.getElementById("filters").innerHTML=`
+    <label>品項<select id="fMk"><option value="presale">預售屋</option><option value="resale">中古/成屋</option><option value="land">土地</option></select></label>
+    <div class="maplegend">中位單價 低<span class="bar"></span>高（泡泡大小＝成交量）</div>
+    <span class="count" id="cnt"></span>`;
+  fMk.value=s.mk;
+  document.getElementById("tablewrap").innerHTML=`<div id="map"></div><div id="maplist" style="margin-top:16px"></div>`;
+  if(LMAP){LMAP.remove();LMAP=null;}
+  LMAP=L.map('map',{scrollWheelZoom:true}).setView([24.95,121.23],11);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:18}).addTo(LMAP);
+  const draw=()=>{
+    s.mk=fMk.value;
+    const data=AGG[s.mk]||{};
+    const entries=Object.entries(data).filter(([d,v])=>CENTROIDS[d]&&v.med!=null);
+    const meds=entries.map(([d,v])=>v.med), ns=entries.map(([d,v])=>v.n);
+    const mn=Math.min(...meds),mx=Math.max(...meds),maxN=Math.max(...ns,1);
+    if(LLAYER)LLAYER.remove();
+    LLAYER=L.layerGroup().addTo(LMAP);
+    entries.forEach(([d,v])=>{
+      const rad=12+34*Math.sqrt(v.n/maxN);
+      const col=heat(v.med,mn,mx);
+      const m=L.circleMarker(CENTROIDS[d],{radius:rad,color:"#fff",weight:1.5,fillColor:col,fillOpacity:.78});
+      m.bindPopup(`<b>${d}</b>（${MK_LABEL[s.mk]}）<br>成交量：${v.n.toLocaleString()} 筆<br>中位單價：<b>${v.med} 萬/坪</b><br>平均總價：${v.avgtot?v.avgtot.toLocaleString()+' 萬':'—'}`);
+      m.bindTooltip(`${d} ${v.med}萬`,{permanent:true,direction:"center",className:"maptip"}).addTo(LLAYER);
+      m.addTo(LLAYER);
+    });
+    cnt.textContent=`${MK_LABEL[s.mk]}｜${entries.length} 區`;
+    // 下方排行表
+    const rows=entries.slice().sort((a,b)=>b[1].med-a[1].med);
+    document.getElementById("maplist").innerHTML=`<table><thead><tr>
+      <th class="l">行政區</th><th>成交量</th><th>中位單價<br><small>萬/坪</small></th><th>平均總價<br><small>萬</small></th>
+      </tr></thead><tbody>${rows.map(([d,v])=>`<tr><td class="l"><span class="dist">${d}</span></td>
+      <td>${v.n.toLocaleString()}</td><td class="price">${v.med}</td><td>${v.avgtot?v.avgtot.toLocaleString():'—'}</td></tr>`).join("")}</tbody></table>`;
+  };
+  fMk.addEventListener("change",draw);
+  draw();
+  setTimeout(()=>LMAP.invalidateSize(),200);
+}
 
 /* ===== 共用 ===== */
 function empty(c){return `<tr><td colspan="${c}" style="text-align:center;padding:30px;color:#999">查無符合條件的資料</td></tr>`;}
