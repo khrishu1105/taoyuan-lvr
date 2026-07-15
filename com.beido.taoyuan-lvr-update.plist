@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.beido.taoyuan-lvr-update</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/python3</string>
+        <string>/Users/khrishu/My_AI_Agent/桃園實登查詢/update.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/khrishu/My_AI_Agent/桃園實登查詢</string>
+
+    <!-- 每月 2、12、22 號 10:00 執行（內政部 1/11/21 發布的隔天） -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Day</key><integer>2</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Day</key><integer>12</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Day</key><integer>22</integer><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
+
+    <!-- 若排程時間電腦在睡眠/關機，開機後補跑一次 -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/khrishu/My_AI_Agent/桃園實登查詢/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/khrishu/My_AI_Agent/桃園實登查詢/launchd.err.log</string>
+</dict>
+</plist>

@@ -1,0 +1,15 @@
+# 原始季度 zip（362MB，可由 update.py 重新下載，不進 repo）
+raw/
+
+# 可重新產生的中間產物
+data.db
+*.log
+__pycache__/
+.DS_Store
+
+# 舊版 schema 殘檔（已不使用）
+data/projects.json
+data/transactions.json
+
+# 單機版打包檔（體積大、可用 build_standalone.py 重產；如需分享再自行加入）
+*單機版*.html
