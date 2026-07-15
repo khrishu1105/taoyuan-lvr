@@ -176,6 +176,7 @@ async function boot(){
   document.getElementById("n_bargain").textContent = (META.resale_bargains||0)+" 筆";
   document.querySelectorAll(".tab").forEach(el=>el.addEventListener("click",()=>switchTab(el.dataset.t)));
   document.getElementById("foot").innerHTML =
+    `<b>近3年中位</b>：因近年房市漲幅大，全期均價會被早年低價拉低，故另計近3年(${META.recent_cut||''}起)中位單價較貼近現況，地圖顏色亦採近3年。`+
     `口徑：單價採<b>去車位單價</b>＝(總價−車位價)/(建物−車位面積)換算萬/坪，避免車位灌入拉低。行情統計與檢便宜<b>只採住宅、排除特殊交易</b>(親友/持分/含增建/含稅費等，來自官方備註)；店面/辦公/工業歸「非住宅」、格局多為0房，可用篩選開關切換。預售「有效筆數＝總筆－解約」。`+
     `筆數≠戶數(含車位分列、簽約時間差；預售2021/7前為舊制)。<b>中古的「社區/建案名」是用地號比對我方預售資料自動推得</b>(內政部中古開放資料本身無社區名)，只標對得到的、無把握就留空；預售分頁「中古轉售」=該建案<b>確認二次轉售</b>筆數(同一門牌在成屋檔出現≥2次的超出部分)；剛交屋建案的成屋紀錄多為建商成屋/交屋首購=第一手，不算轉售，故此數通常遠小於戶數。`+
     `<br>本工具為靜態頁，資料源內政部政府開放資料(可重製散布，須標示來源)，非官方系統。更新：重跑 etl.py。 · 製作 khrishu`;
@@ -207,7 +208,7 @@ async function renderPresale(){
     <label>建案/門牌關鍵字<input type="text" id="fQ" placeholder="站前、A22、水公園"></label>
     <label>最少有效筆數<input type="number" id="fMin" value="0" min="0" style="width:80px"></label>
     <label class="chk"><input type="checkbox" id="fTerm"> 只看有解約</label>
-    <label>排序<select id="fS"><option value="valid">有效筆數↓</option><option value="avg">均價↓</option><option value="avgtot">均總價↓</option><option value="p2">最新登錄↓</option></select></label>
+    <label>排序<select id="fS"><option value="valid">有效筆數↓</option><option value="med3">近3年中位↓</option><option value="avg">全期均價↓</option><option value="avgtot">均總價↓</option><option value="p2">最新登錄↓</option></select></label>
     <span class="count" id="cnt"></span>`;
   const draw=()=>{
     const d=fD.value,q=fQ.value.trim(),mn=+fMin.value||0,ot=fTerm.checked,sk=fS.value;
@@ -215,8 +216,8 @@ async function renderPresale(){
     list.sort((a,b)=>{let x=a[sk],y=b[sk];if(sk==="p2")return (y||"").localeCompare(x||"");return (y??-1)-(x??-1);});
     cnt.textContent=`符合 ${list.length} 案 / 共 ${P.length}`;
     document.getElementById("tablewrap").innerHTML=`<table><thead><tr>
-      <th class="l">建案 / 行政區</th><th>有效/總</th><th class="hidem">解約</th><th>均價<br><small>萬/坪</small></th>
-      <th class="hidem">中位</th><th>單價區間</th><th>均總價<br><small>萬</small></th><th class="hidem">主力房</th><th>中古<br><small>轉售</small></th><th class="l">登錄期間</th>
+      <th class="l">建案 / 行政區</th><th>有效/總</th><th class="hidem">解約</th><th>全期<br><small>均價</small></th>
+      <th>近3年<br><small>中位</small></th><th class="hidem">單價區間</th><th>均總價<br><small>萬</small></th><th class="hidem">主力房</th><th>中古<br><small>轉售</small></th><th class="l">登錄期間</th>
       </tr></thead><tbody>${list.slice(0,400).map(pRow).join("")||empty(10)}</tbody></table>`;
     document.querySelectorAll("tr.prow").forEach(tr=>tr.addEventListener("click",()=>drillPresale(tr)));
   };
@@ -227,8 +228,9 @@ function pRow(p){return `<tr class="prow" data-k="${encodeURIComponent(p.d+"|"+p
   <td class="l"><span class="dist">${p.d}</span><span class="pname">${p.n}</span></td>
   <td>${p.valid}<small style="color:#bbb">/${p.cnt}</small></td>
   <td class="hidem">${p.term?`<span class="term">${p.term}</span>`:'<span class="muted">0</span>'}</td>
-  <td class="price">${fmt(p.avg)}</td><td class="hidem">${fmt(p.med)}</td>
-  <td>${p.lo!=null?`<span class="rng">${fmt(p.lo)}–${fmt(p.hi)}</span>`:'<span class="muted">—</span>'}</td>
+  <td class="price">${fmt(p.avg)}</td>
+  <td class="price" style="color:var(--presale)">${p.med3!=null?fmt(p.med3):'<span class="muted">—</span>'}</td>
+  <td class="hidem">${p.lo!=null?`<span class="rng">${fmt(p.lo)}–${fmt(p.hi)}</span>`:'<span class="muted">—</span>'}</td>
   <td>${p.avgtot?p.avgtot.toLocaleString():'<span class="muted">—</span>'}</td>
   <td class="hidem">${p.room?p.room+'房':'<span class="muted">—</span>'}</td>
   <td>${p.resale?`<span class="term" style="color:var(--resale)">${p.resale}</span>`:'<span class="muted">0</span>'}</td>
@@ -282,7 +284,7 @@ async function renderResale(){
     let html;
     if(s.mode==="bldg"){
       html=`<table><thead><tr><th class="l">建案名</th><th class="l">社區/棟（門牌到「號」）</th><th>成屋<br><small>成交</small></th><th>確認<br><small>轉售</small></th>
-        <th class="hidem">型態</th><th>均價<br><small>萬/坪</small></th><th class="hidem">中位</th><th>單價區間</th><th class="l">成交期間</th>
+        <th class="hidem">型態</th><th>全期<br><small>均價</small></th><th>近3年<br><small>中位</small></th><th class="hidem">單價區間</th><th class="l">成交期間</th>
         </tr></thead><tbody>${slice.map(bRow).join("")||empty(9)}</tbody></table>`+pager(list.length,pg);
     }else{
       html=`<table><thead><tr><th class="l">社區/建案</th><th class="l">門牌 / 行政區</th><th class="hidem">型態</th><th class="hidem">用途</th><th>屋齡</th><th>格局</th>
@@ -333,8 +335,9 @@ function bRow(r){return `<tr class="prow" data-k="${encodeURIComponent(r.d+"|"+r
   <td class="price">${r.cnt}</td>
   <td>${r.resold?`<b style="color:var(--resale)">${r.resold}</b>`:'<span class="muted">0</span>'}</td>
   <td class="hidem">${r.bt||''}</td>
-  <td class="price">${fmt(r.avg)}</td><td class="hidem">${fmt(r.med)}</td>
-  <td>${r.lo!=null?`<span class="rng">${fmt(r.lo)}–${fmt(r.hi)}</span>`:'<span class="muted">—</span>'}</td>
+  <td class="price">${fmt(r.avg)}</td>
+  <td class="price" style="color:var(--resale)">${r.med3!=null?fmt(r.med3):'<span class="muted">—</span>'}</td>
+  <td class="hidem">${r.lo!=null?`<span class="rng">${fmt(r.lo)}–${fmt(r.hi)}</span>`:'<span class="muted">—</span>'}</td>
   <td class="l"><span class="rng">${r.p1||''} ~ ${r.p2||''}</span></td></tr>`;}
 async function drillBldg(tr,TX){
   const nx=tr.nextElementSibling; if(nx&&nx.classList.contains("detail")){nx.remove();return;}
@@ -488,23 +491,24 @@ async function renderMap(){
       const data=AGG[s.mk]||{};
       entries=Object.entries(data).filter(([d,v])=>CENTROIDS[d]&&v.med!=null).map(([d,v])=>[d,CENTROIDS[d],v]);
     }
-    const meds=entries.map(e=>e[2].med), ns=entries.map(e=>e[2].n);
+    const pv=v=>v.med3!=null?v.med3:v.med;   // 地圖顏色/排序用近3年中位(較貼近現況)
+    const meds=entries.map(e=>pv(e[2])), ns=entries.map(e=>e[2].n);
     const mn=Math.min(...meds),mx=Math.max(...meds),maxN=Math.max(...ns,1);
     if(LLAYER)LLAYER.remove();
     LLAYER=L.layerGroup().addTo(LMAP);
     entries.forEach(([nm,ll,v])=>{
-      const m=L.circleMarker(ll,{radius:12+34*Math.sqrt(v.n/maxN),color:"#fff",weight:1.5,fillColor:heat(v.med,mn,mx),fillOpacity:.78});
-      m.bindPopup(`<b>${nm}</b>（${MK_LABEL[s.mk]}）<br>成交量：${v.n.toLocaleString()} 筆<br>中位單價：<b>${v.med} 萬/坪</b><br>平均總價：${v.avgtot?v.avgtot.toLocaleString()+' 萬':'—'}`);
-      m.bindTooltip(`${nm} ${v.med}萬`,{permanent:true,direction:"center",className:"maptip"});
+      const m=L.circleMarker(ll,{radius:12+34*Math.sqrt(v.n/maxN),color:"#fff",weight:1.5,fillColor:heat(pv(v),mn,mx),fillOpacity:.78});
+      m.bindPopup(`<b>${nm}</b>（${MK_LABEL[s.mk]}）<br>成交量：${v.n.toLocaleString()} 筆<br><b style="color:#1a6fb0">近3年中位：${v.med3!=null?v.med3+' 萬/坪':'—'}</b><br>全期中位：${v.med} 萬/坪<br>平均總價：${v.avgtot?v.avgtot.toLocaleString()+' 萬':'—'}`);
+      m.bindTooltip(`${nm} ${pv(v)}萬`,{permanent:true,direction:"center",className:"maptip"});
       m.addTo(LLAYER);
     });
     const cur=document.getElementById("fMk")?document.getElementById("fMk").selectedOptions[0].text:"";
-    document.getElementById("cnt").textContent=`${cur}｜${entries.length} ${s.level==="zone"?"個重劃區":"區"}`;
-    const rows=entries.slice().sort((a,b)=>b[2].med-a[2].med);
+    document.getElementById("cnt").textContent=`${cur}｜${entries.length} ${s.level==="zone"?"個重劃區":"區"}（顏色＝近3年中位）`;
+    const rows=entries.slice().sort((a,b)=>pv(b[2])-pv(a[2]));
     document.getElementById("maplist").innerHTML=`<table><thead><tr>
-      <th class="l">${nameCol}</th><th>成交量</th><th>中位單價<br><small>萬/坪</small></th><th>平均總價<br><small>萬</small></th>
+      <th class="l">${nameCol}</th><th>成交量</th><th>近3年<br><small>中位</small></th><th class="hidem">全期<br><small>中位</small></th><th>平均總價<br><small>萬</small></th>
       </tr></thead><tbody>${rows.map(([nm,ll,v])=>`<tr><td class="l"><span class="dist">${nm}</span></td>
-      <td>${v.n.toLocaleString()}</td><td class="price">${v.med}</td><td>${v.avgtot?v.avgtot.toLocaleString():'—'}</td></tr>`).join("")}</tbody></table>`;
+      <td>${v.n.toLocaleString()}</td><td class="price">${v.med3!=null?v.med3:'—'}</td><td class="hidem">${v.med}</td><td>${v.avgtot?v.avgtot.toLocaleString():'—'}</td></tr>`).join("")}</tbody></table>`;
   };
   fLv.addEventListener("change",()=>{setMk();draw();});
   fMk.addEventListener("change",draw);

@@ -142,7 +142,14 @@ for (d, addr), lst in addr_groups.items():
     if projs:
         resale_hit[Counter(projs).most_common(1)[0][0]] += extra
 for r in presale: r["seg"] = bseg.get(r["eid"], "")
-print(f"預售 {len(presale)} | 中古 {len(resale)} | 土地 {len(land)} | 對到建案名 {sum(named_cnt.values()):,}筆/{len(named_cnt)}建案 | 真二次轉售 {sum(resale_hit.values()):,}筆/{len(resale_hit)}建案")
+# 近3年基準(動態)：最新成交日往前推3年。全期中位會被早年低價拉低，另計近3年中位才貼近現況
+_alld = sorted(x["date"] for x in presale+resale+land if x["date"] and x["date"]>="2000-01-01")
+_maxd = _alld[-1] if _alld else "2026-01-01"
+RECENT_CUT = f"{int(_maxd[:4])-3}{_maxd[4:]}"   # e.g. 2023-05-10
+def med3(rows):  # 近3年中位單價(rows需已含unit/date)
+    pr=[x["unit"] for x in rows if x["unit"] and x["unit"]>0 and x["date"] and x["date"]>=RECENT_CUT]
+    return round(statistics.median(pr),1) if pr else None
+print(f"預售 {len(presale)} | 中古 {len(resale)} | 土地 {len(land)} | 對到建案名 {sum(named_cnt.values()):,}筆/{len(named_cnt)}建案 | 真二次轉售 {sum(resale_hit.values()):,}筆/{len(resale_hit)}建案 | 近3年基準 {RECENT_CUT}起")
 
 # ================= SQLite =================
 if os.path.exists(DB): os.remove(DB)
@@ -171,6 +178,7 @@ for (d, proj), lst in g.items():
     dates=[x["date"] for x in valid if x["date"]]; tots=[x["total"] for x in clean if x["total"]]
     rc=Counter(x["rm"] for x in clean if x["rm"])
     pprojects.append({"d":d,"n":proj,"cnt":len(lst),"valid":len(valid),"term":sum(x["term"] for x in lst),"resale":resale_hit.get(proj,0),
+        "med3":med3(clean),
         "avg":round(statistics.mean(priced),1) if priced else None,"med":round(statistics.median(priced),1) if priced else None,
         "lo":round(min(priced),1) if priced else None,"hi":round(max(priced),1) if priced else None,
         "avgtot":round(statistics.mean(tots)) if tots else None,
@@ -204,7 +212,8 @@ for (d,bk),lst in gb.items():
     bt=Counter(x["bt"] for x in lst if x["bt"]); pj=Counter(x["proj"] for x in lst if x.get("proj"))
     # 真轉售=同一門牌出現>=2次的超出部分(第一次為一手)
     ac=Counter(x["addr"] for x in lst if x["addr"]); resold=sum(c-1 for c in ac.values() if c>=2)
-    resale_bldg.append({"d":d,"b":bk,"cnt":len(lst),"resold":resold,
+    clean3=[x for x in lst if x.get("resi") and not x.get("special")]
+    resale_bldg.append({"d":d,"b":bk,"cnt":len(lst),"resold":resold,"med3":med3(clean3),
         "avg":round(statistics.mean(pr),1) if pr else None,"med":round(statistics.median(pr),1) if pr else None,
         "lo":round(min(pr),1) if pr else None,"hi":round(max(pr),1) if pr else None,
         "p1":min(dates) if dates else None,"p2":max(dates) if dates else None,
@@ -271,7 +280,7 @@ def district_agg(rows, clean=False):
     for d,lst in g.items():
         pr=[x["unit"] for x in lst if x["unit"] and x["unit"]>0]
         tots=[x["total"] for x in lst if x["total"]]
-        out[d]={"n":len(lst),"med":round(statistics.median(pr),1) if pr else None,
+        out[d]={"n":len(lst),"med":round(statistics.median(pr),1) if pr else None,"med3":med3(lst),
                 "avgtot":round(statistics.mean(tots)) if tots else None}
     return out
 map_agg={"presale":district_agg([x for x in presale if not x["term"]],clean=True),
@@ -308,7 +317,7 @@ def zone_agg(rows, clean=False):
     for z,lst in g.items():
         pr=[x["unit"] for x in lst if x["unit"] and x["unit"]>0]
         tots=[x["total"] for x in lst if x["total"]]
-        out[z]={"n":len(lst),"med":round(statistics.median(pr),1) if pr else None,
+        out[z]={"n":len(lst),"med":round(statistics.median(pr),1) if pr else None,"med3":med3(lst),
                 "avgtot":round(statistics.mean(tots)) if tots else None}
     return out
 map_zones={"zones":{z:info["c"] for z,info in REDEV_ZONES.items()},
@@ -330,7 +339,7 @@ meta={"seasons":seasons,"districts":districts,
     "resale_tx":len(RESALE_KEEP),"resale_tx_all":len(resale),"land_tx":len(land),
     "resale_named":sum(1 for x in RESALE_KEEP if x.get("proj")),"resale_named_projects":len(named_cnt),
     "resale_resold":sum(resale_hit.values()),
-    "resale_bargains":len(bargains[:2000]),
+    "resale_bargains":len(bargains[:2000]),"recent_cut":RECENT_CUT,
     "presale_min":p_min,"presale_max":p_max,"resale_min":r_min,"resale_max":r_max,"land_min":l_min,"land_max":l_max,
     "date_min":min(alldates),"date_max":max(alldates)}
 json.dump(meta,open(os.path.join(DATADIR,"meta.json"),"w",encoding="utf-8"),ensure_ascii=False,indent=1)
