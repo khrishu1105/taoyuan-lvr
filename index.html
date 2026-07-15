@@ -456,42 +456,57 @@ function heat(v,min,max){const t=Math.max(0,Math.min(1,(v-min)/((max-min)||1)));
 async function renderMap(){
   if(typeof L==='undefined'){document.getElementById("stats").innerHTML="";document.getElementById("filters").innerHTML="";
     document.getElementById("tablewrap").innerHTML=`<div class="loading">地圖元件需要網路連線載入（Leaflet/OSM）。離線時請改用其他分頁。</div>`;return;}
-  const AGG=await load("map_agg");
-  const s=state.map=state.map||{mk:"presale"};
+  const [AGG,ZONES]=await Promise.all([load("map_agg"),load("map_zones")]);
+  const s=state.map=state.map||{level:"district",mk:"presale"};
   document.getElementById("stats").innerHTML="";
   document.getElementById("filters").innerHTML=`
-    <label>品項<select id="fMk"><option value="presale">預售屋</option><option value="resale">中古/成屋</option><option value="land">土地</option></select></label>
+    <label>範圍<select id="fLv"><option value="district">行政區</option><option value="zone">重劃區</option></select></label>
+    <label>品項<select id="fMk"></select></label>
     <div class="maplegend">中位單價 低<span class="bar"></span>高（泡泡大小＝成交量）</div>
     <span class="count" id="cnt"></span>`;
-  fMk.value=s.mk;
+  fLv.value=s.level;
+  const setMk=()=>{
+    const opts=s.level==="zone"?[["presale","預售屋"],["resale","中古/成屋"]]
+      :[["presale","預售屋"],["resale","中古/成屋"],["land","土地"]];
+    fMk.innerHTML=opts.map(([v,l])=>`<option value="${v}">${l}</option>`).join("");
+    if(!opts.some(o=>o[0]===s.mk)) s.mk="presale";
+    fMk.value=s.mk;
+  };
+  setMk();
   document.getElementById("tablewrap").innerHTML=`<div id="map"></div><div id="maplist" style="margin-top:16px"></div>`;
   if(LMAP){LMAP.remove();LMAP=null;}
-  LMAP=L.map('map',{scrollWheelZoom:true}).setView([24.95,121.23],11);
+  LMAP=L.map('map',{scrollWheelZoom:true}).setView([24.97,121.24],11);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:18}).addTo(LMAP);
   const draw=()=>{
-    s.mk=fMk.value;
-    const data=AGG[s.mk]||{};
-    const entries=Object.entries(data).filter(([d,v])=>CENTROIDS[d]&&v.med!=null);
-    const meds=entries.map(([d,v])=>v.med), ns=entries.map(([d,v])=>v.n);
+    s.level=fLv.value; s.mk=fMk.value;
+    const nameCol = s.level==="zone"?"重劃區":"行政區";
+    let entries;   // [name, [lat,lng], {n,med,avgtot}]
+    if(s.level==="zone"){
+      const data=ZONES[s.mk]||{}, cen=ZONES.zones;
+      entries=Object.entries(data).filter(([n,v])=>cen[n]&&v.med!=null).map(([n,v])=>[n,cen[n],v]);
+    }else{
+      const data=AGG[s.mk]||{};
+      entries=Object.entries(data).filter(([d,v])=>CENTROIDS[d]&&v.med!=null).map(([d,v])=>[d,CENTROIDS[d],v]);
+    }
+    const meds=entries.map(e=>e[2].med), ns=entries.map(e=>e[2].n);
     const mn=Math.min(...meds),mx=Math.max(...meds),maxN=Math.max(...ns,1);
     if(LLAYER)LLAYER.remove();
     LLAYER=L.layerGroup().addTo(LMAP);
-    entries.forEach(([d,v])=>{
-      const rad=12+34*Math.sqrt(v.n/maxN);
-      const col=heat(v.med,mn,mx);
-      const m=L.circleMarker(CENTROIDS[d],{radius:rad,color:"#fff",weight:1.5,fillColor:col,fillOpacity:.78});
-      m.bindPopup(`<b>${d}</b>（${MK_LABEL[s.mk]}）<br>成交量：${v.n.toLocaleString()} 筆<br>中位單價：<b>${v.med} 萬/坪</b><br>平均總價：${v.avgtot?v.avgtot.toLocaleString()+' 萬':'—'}`);
-      m.bindTooltip(`${d} ${v.med}萬`,{permanent:true,direction:"center",className:"maptip"}).addTo(LLAYER);
+    entries.forEach(([nm,ll,v])=>{
+      const m=L.circleMarker(ll,{radius:12+34*Math.sqrt(v.n/maxN),color:"#fff",weight:1.5,fillColor:heat(v.med,mn,mx),fillOpacity:.78});
+      m.bindPopup(`<b>${nm}</b>（${MK_LABEL[s.mk]}）<br>成交量：${v.n.toLocaleString()} 筆<br>中位單價：<b>${v.med} 萬/坪</b><br>平均總價：${v.avgtot?v.avgtot.toLocaleString()+' 萬':'—'}`);
+      m.bindTooltip(`${nm} ${v.med}萬`,{permanent:true,direction:"center",className:"maptip"});
       m.addTo(LLAYER);
     });
-    cnt.textContent=`${MK_LABEL[s.mk]}｜${entries.length} 區`;
-    // 下方排行表
-    const rows=entries.slice().sort((a,b)=>b[1].med-a[1].med);
+    const cur=document.getElementById("fMk")?document.getElementById("fMk").selectedOptions[0].text:"";
+    document.getElementById("cnt").textContent=`${cur}｜${entries.length} ${s.level==="zone"?"個重劃區":"區"}`;
+    const rows=entries.slice().sort((a,b)=>b[2].med-a[2].med);
     document.getElementById("maplist").innerHTML=`<table><thead><tr>
-      <th class="l">行政區</th><th>成交量</th><th>中位單價<br><small>萬/坪</small></th><th>平均總價<br><small>萬</small></th>
-      </tr></thead><tbody>${rows.map(([d,v])=>`<tr><td class="l"><span class="dist">${d}</span></td>
+      <th class="l">${nameCol}</th><th>成交量</th><th>中位單價<br><small>萬/坪</small></th><th>平均總價<br><small>萬</small></th>
+      </tr></thead><tbody>${rows.map(([nm,ll,v])=>`<tr><td class="l"><span class="dist">${nm}</span></td>
       <td>${v.n.toLocaleString()}</td><td class="price">${v.med}</td><td>${v.avgtot?v.avgtot.toLocaleString():'—'}</td></tr>`).join("")}</tbody></table>`;
   };
+  fLv.addEventListener("change",()=>{setMk();draw();});
   fMk.addEventListener("change",draw);
   draw();
   setTimeout(()=>LMAP.invalidateSize(),200);
