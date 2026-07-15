@@ -46,6 +46,13 @@ SPECIAL_NOTE = ("親友","員工","共有人","特殊關係","關係人","含土
     "含車位交易總價","坪數含","二親等","公同共有","抵繳","拍賣","法拍","協議")
 def is_special(note): return any(k in (note or "") for k in SPECIAL_NOTE)
 def is_resi(use): return "住" in (use or "")   # 住家用/住商用/國民住宅=住宅；商業/辦公/工業/其他=非住宅
+# 政策性住宅(區段徵收安置宅/抵價地/合宜宅)非市場行情，須排除；價格受管制偏低會拉低均價
+POLICY_KW = ("航空城", "合宜", "安置住宅", "區段徵收", "抵價地", "社會住宅")
+POLICY_PROJ = {"成家大璽"}   # 明確政策宅但案名無關鍵字者
+def is_policy(proj):
+    p = proj or ""
+    return any(k in p for k in POLICY_KW) or p in POLICY_PROJ
+def clean_ok(r): return r.get("resi") and not r.get("special") and not r.get("policy")   # 純市場住宅
 
 presale, resale, land = [], [], []
 presale_parcel = {}   # (區,地段,地號) -> 建案名；用來把建案名反貼到中古(交屋後轉售)
@@ -73,7 +80,7 @@ for zp in sorted(glob.glob(os.path.join(RAW, "*.zip"))):
                 "rm":int(num(r[16]) or 0),"hl":int(num(r[17]) or 0),"ba":int(num(r[18]) or 0),
                 "fl":(r[9] or "").strip(),"tf":(r[10] or "").strip(),"bt":(r[11] or "").strip(),
                 "unit":up,"total":round(t/10000) if t else None,"park":(r[23] or "").strip(),
-                "resi":is_resi(use),"special":is_special(r[26] or ""),
+                "resi":is_resi(use),"special":is_special(r[26] or ""),"policy":is_policy(proj),
                 "term":1 if (len(r)>30 and (r[30] or "").strip()) else 0})
     bl = read_csv_from_zip(z, "h_lvr_land_b_land.csv")
     if bl:
@@ -126,6 +133,7 @@ for r in resale:
     for k in r["_keys"]:
         if k in presale_parcel: proj = presale_parcel[k]; break
     r["proj"] = proj
+    r["policy"] = is_policy(proj)
     del r["_keys"]
     if proj: named_cnt[proj] += 1
 
@@ -173,7 +181,7 @@ for r in presale: g[(r["d"], r["proj"])].append(r)
 pprojects = []
 for (d, proj), lst in g.items():
     valid=[x for x in lst if not x["term"]]
-    clean=[x for x in valid if x.get("resi") and not x.get("special")]  # 只用住宅、非特殊交易算行情
+    clean=[x for x in valid if clean_ok(x)]  # 純市場住宅(排除特殊/政策宅)
     priced=[x["unit"] for x in clean if x["unit"] and x["unit"]>0]
     dates=[x["date"] for x in valid if x["date"]]; tots=[x["total"] for x in clean if x["total"]]
     rc=Counter(x["rm"] for x in clean if x["rm"])
@@ -205,14 +213,14 @@ for r in RESALE_KEEP:
     if bk: gb[(r["d"],bk)].append(r)
 bldg_med={}; resale_bldg=[]
 for (d,bk),lst in gb.items():
-    pr=[x["unit"] for x in lst if x["unit"] and x["unit"]>0 and x.get("resi") and not x.get("special")]
+    pr=[x["unit"] for x in lst if x["unit"] and x["unit"]>0 and clean_ok(x)]
     if pr: bldg_med[(d,bk)]=statistics.median(pr)
     if len(lst)<2: continue
     dates=[x["date"] for x in lst if x["date"]]
     bt=Counter(x["bt"] for x in lst if x["bt"]); pj=Counter(x["proj"] for x in lst if x.get("proj"))
     # 真轉售=同一門牌出現>=2次的超出部分(第一次為一手)
     ac=Counter(x["addr"] for x in lst if x["addr"]); resold=sum(c-1 for c in ac.values() if c>=2)
-    clean3=[x for x in lst if x.get("resi") and not x.get("special")]
+    clean3=[x for x in lst if clean_ok(x)]
     resale_bldg.append({"d":d,"b":bk,"cnt":len(lst),"resold":resold,"med3":med3(clean3),
         "avg":round(statistics.mean(pr),1) if pr else None,"med":round(statistics.median(pr),1) if pr else None,
         "lo":round(min(pr),1) if pr else None,"hi":round(max(pr),1) if pr else None,
@@ -226,7 +234,7 @@ ga=defaultdict(list)
 for r in RESALE_KEEP: ga[(r["d"],r["bt"])].append(r)
 area_med={}; resale_area=[]
 for (d,bt),lst in ga.items():
-    pr=[x["unit"] for x in lst if x["unit"] and x["unit"]>0 and x.get("resi") and not x.get("special")]
+    pr=[x["unit"] for x in lst if x["unit"] and x["unit"]>0 and clean_ok(x)]
     ages=[x["age"] for x in lst if x["age"] is not None]
     if pr: area_med[(d,bt)]=statistics.median(pr)
     resale_area.append({"d":d,"bt":bt,"cnt":len(lst),
@@ -248,13 +256,13 @@ dump("resale_tx.json", [[r["d"],r["addr"],r["date"],r["bt"],r["age"],r["rm"],r["
 # 檢便宜：住宅、非特殊、有社區名、單價>=15、合理便宜區間(-35%~-8%)
 bargains=[]
 for r in RESALE_KEEP:
-    if not (r.get("resi") and not r.get("special") and r.get("proj") and r["unit"] and r["unit"]>=15): continue
+    if not (clean_ok(r) and r.get("proj") and r["unit"] and r["unit"]>=15): continue
     g=gap_of(r)
     if g is not None and -35<=g<=-8:
         bargains.append([r["d"],r["addr"],r["date"],r.get("proj"),r["bt"],r["age"],r["unit"],r["total"],g])
 bargains.sort(key=lambda x:x[8])
 dump("resale_bargains.json", bargains[:2000])
-resi_keep=sum(1 for r in RESALE_KEEP if r.get("resi") and not r.get("special"))
+resi_keep=sum(1 for r in RESALE_KEEP if clean_ok(r))
 print(f"  中古精簡 {len(RESALE_KEEP):,}/{len(resale):,} (住宅純淨{resi_keep:,}) | 棟聚合 {len(resale_bldg):,} | 檢便宜 {len(bargains):,}筆")
 
 # ================= 土地：逐筆 + 區×分區統計 =================
@@ -274,7 +282,7 @@ dump("land_area.json", land_area)
 def district_agg(rows, clean=False):
     g=defaultdict(list)
     for r in rows:
-        if clean and not (r.get("resi") and not r.get("special")): continue
+        if clean and not clean_ok(r): continue
         g[r["d"]].append(r)
     out={}
     for d,lst in g.items():
@@ -318,7 +326,7 @@ def zone_agg(rows, clean=False):
     for r in rows:
         z=seg2zone.get(r.get("seg",""))
         if not z: continue
-        if clean and not (r.get("resi") and not r.get("special")): continue
+        if clean and not clean_ok(r): continue
         g[z].append(r)
     out={}
     for z,lst in g.items():
@@ -340,7 +348,7 @@ def quarter(d):
 def trend_agg(rows, clean=False):
     g=defaultdict(list)
     for r in rows:
-        if clean and not (r.get("resi") and not r.get("special")): continue
+        if clean and not clean_ok(r): continue
         q=quarter(r["date"])
         if q and int(q[:4])>=2018: g[q].append(r)
     out=[]
@@ -359,7 +367,7 @@ def zone_trend(rows, clean=False):
     for r in rows:
         z=seg2zone.get(r.get("seg",""))
         if not z: continue
-        if clean and not (r.get("resi") and not r.get("special")): continue
+        if clean and not clean_ok(r): continue
         q=quarter(r["date"])
         if q and int(q[:4])>=2019: g[z][q].append(r)
     out={}
