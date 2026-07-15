@@ -400,6 +400,19 @@ zone_breakdown_data={"presale":zone_breakdown([x for x in presale if not x["term
                      "resale":zone_breakdown(RESALE_KEEP)}
 dump("zone_breakdown.json", zone_breakdown_data)
 
+# 各重劃區逐筆(供點趨勢某季→列該季每筆交易) {zone:[[案名,門牌,日,單價,總價,格局],...]}
+def zone_tx_build(rows):
+    g=defaultdict(list)
+    for r in rows:
+        z=seg2zone.get(r.get("seg",""))
+        if not z or not clean_ok(r): continue
+        g[z].append([r.get("proj") or "", r["addr"] or "", r["date"], r["unit"], r.get("total"),
+                     f'{r.get("rm",0)}房{r.get("hl",0)}廳{r.get("ba",0)}衛'])
+    return g
+zone_tx={"presale":zone_tx_build([x for x in presale if not x["term"]]),
+         "resale":zone_tx_build(RESALE_KEEP)}
+dump("zone_tx.json", zone_tx)
+
 # ================= meta =================
 seasons=sorted(set([r["season"] for r in presale]+[r["season"] for r in resale]+[r["season"] for r in land]))
 districts=sorted(set([r["d"] for r in presale]+[r["d"] for r in resale]+[r["d"] for r in land]))
