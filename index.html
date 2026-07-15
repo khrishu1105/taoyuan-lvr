@@ -218,10 +218,11 @@ async function renderPresale(){
     list.sort((a,b)=>{let x=a[sk],y=b[sk];if(sk==="p2")return (y||"").localeCompare(x||"");return (y??-1)-(x??-1);});
     cnt.textContent=`符合 ${list.length} 案 / 共 ${P.length}`;
     document.getElementById("tablewrap").innerHTML=`<table><thead><tr>
-      <th class="l">建案 / 行政區</th><th>有效/總</th><th class="hidem">解約</th><th>全期<br><small>均價</small></th>
-      <th>近3年<br><small>中位</small></th><th class="hidem">單價區間</th><th>均總價<br><small>萬</small></th><th class="hidem">主力房</th><th>中古<br><small>轉售</small></th><th class="l">登錄期間</th>
+      <th class="l">建案 / 行政區</th><th data-sk="valid">有效/總</th><th class="hidem">解約</th><th data-sk="avg">全期<br><small>均價</small></th>
+      <th data-sk="med3">近3年<br><small>中位</small></th><th class="hidem">單價區間</th><th data-sk="avgtot">均總價<br><small>萬</small></th><th class="hidem">主力房</th><th>中古<br><small>轉售</small></th><th class="l" data-sk="p2">登錄期間</th>
       </tr></thead><tbody>${list.slice(0,400).map(pRow).join("")||empty(10)}</tbody></table>`;
     document.querySelectorAll("tr.prow").forEach(tr=>tr.addEventListener("click",()=>drillPresale(tr)));
+    wireSort("fS");
   };
   ["fD","fQ","fMin","fTerm","fS"].forEach(id=>document.getElementById(id).addEventListener("input",draw));
   draw();
@@ -285,12 +286,12 @@ async function renderResale(){
     const list=s.list,pg=s.page,slice=list.slice(pg*per,pg*per+per);
     let html;
     if(s.mode==="bldg"){
-      html=`<table><thead><tr><th class="l">建案名</th><th class="l">社區/棟（門牌到「號」）</th><th>成屋<br><small>成交</small></th><th>確認<br><small>轉售</small></th>
-        <th class="hidem">型態</th><th>全期<br><small>均價</small></th><th>近3年<br><small>中位</small></th><th class="hidem">單價區間</th><th class="l">成交期間</th>
+      html=`<table><thead><tr><th class="l">建案名</th><th class="l">社區/棟（門牌到「號」）</th><th data-sk="cnt">成屋<br><small>成交</small></th><th data-sk="resold">確認<br><small>轉售</small></th>
+        <th class="hidem">型態</th><th data-sk="avg">全期<br><small>均價</small></th><th>近3年<br><small>中位</small></th><th class="hidem">單價區間</th><th class="l" data-sk="p2">成交期間</th>
         </tr></thead><tbody>${slice.map(bRow).join("")||empty(9)}</tbody></table>`+pager(list.length,pg);
     }else{
       html=`<table><thead><tr><th class="l">社區/建案</th><th class="l">門牌 / 行政區</th><th class="hidem">型態</th><th class="hidem">用途</th><th>屋齡</th><th>格局</th>
-        <th class="hidem">樓/總</th><th>單價<br><small>萬/坪</small></th><th>總價<br><small>萬</small></th><th class="l">交易日</th>
+        <th class="hidem">樓/總</th><th data-sk="unit">單價<br><small>萬/坪</small></th><th data-sk="total">總價<br><small>萬</small></th><th class="l" data-sk="date">交易日</th>
         </tr></thead><tbody>${slice.map(rRow).join("")||empty(10)}</tbody></table>`+pager(list.length,pg);
     }
     document.getElementById("tablewrap").innerHTML=html;
@@ -298,6 +299,7 @@ async function renderResale(){
     if(pp)pp.onclick=()=>{s.page--;paint();window.scrollTo(0,0);};
     if(pn)pn.onclick=()=>{s.page++;paint();window.scrollTo(0,0);};
     if(s.mode==="bldg")document.querySelectorAll("tr.prow").forEach(tr=>tr.addEventListener("click",()=>drillBldg(tr,TX)));
+    wireSort("fS");
   };
   const draw=()=>{
     s.mode=fMode.value;
@@ -379,8 +381,8 @@ async function renderLand(){
   const drawPage=()=>{
     const per=50,list=s.list,pg=s.page,slice=list.slice(pg*per,pg*per+per);
     document.getElementById("tablewrap").innerHTML=`<table><thead><tr>
-      <th class="l">位置 / 行政區</th><th class="hidem">使用分區</th><th>面積<br><small>坪</small></th>
-      <th>單價<br><small>萬/坪</small></th><th>總價<br><small>萬</small></th><th class="l">交易日</th>
+      <th class="l">位置 / 行政區</th><th class="hidem">使用分區</th><th data-sk="area">面積<br><small>坪</small></th>
+      <th data-sk="unit">單價<br><small>萬/坪</small></th><th data-sk="total">總價<br><small>萬</small></th><th class="l" data-sk="date">交易日</th>
       </tr></thead><tbody>${slice.map(lRow).join("")||empty(6)}</tbody></table>
       <div class="pager"><button id="pp" ${pg<=0?'disabled':''}>‹ 上一頁</button>
       <span>第 ${pg+1} / ${Math.max(1,Math.ceil(list.length/per))} 頁</span>
@@ -388,6 +390,7 @@ async function renderLand(){
     const pp=document.getElementById("pp"),pn=document.getElementById("pn");
     if(pp)pp.onclick=()=>{s.page--;drawPage();window.scrollTo(0,0);};
     if(pn)pn.onclick=()=>{s.page++;drawPage();window.scrollTo(0,0);};
+    wireSort("fS");
   };
   ["fD","fZ","fQ","fS"].forEach(id=>document.getElementById(id).addEventListener("input",()=>{s.page=0;draw();}));
   draw();
@@ -416,7 +419,7 @@ async function renderBargains(){
     const pg=s.page,slice=s.list.slice(pg*per,pg*per+per);
     document.getElementById("tablewrap").innerHTML=`<table><thead><tr>
       <th class="l">社區/建案</th><th class="l">門牌</th><th class="hidem">型態</th><th>屋齡</th>
-      <th>單價<br><small>萬/坪</small></th><th>較社區<br><small>中位</small></th><th>總價<br><small>萬</small></th><th class="l">交易日</th>
+      <th data-sk="unit">單價<br><small>萬/坪</small></th><th data-sk="gap">較社區<br><small>中位</small></th><th>總價<br><small>萬</small></th><th class="l" data-sk="date">交易日</th>
       </tr></thead><tbody>${slice.map(gRow).join("")||empty(8)}</tbody></table>
       <div class="pager"><button id="pp" ${pg<=0?'disabled':''}>‹ 上一頁</button>
       <span>第 ${pg+1} / ${Math.max(1,Math.ceil(s.list.length/per))} 頁</span>
@@ -424,6 +427,7 @@ async function renderBargains(){
     const pp=document.getElementById("pp"),pn=document.getElementById("pn");
     if(pp)pp.onclick=()=>{s.page--;paint();window.scrollTo(0,0);};
     if(pn)pn.onclick=()=>{s.page++;paint();window.scrollTo(0,0);};
+    wireSort("fS");
   };
   const draw=()=>{
     const d=fD.value,q=fQ.value.trim(),sk=fS.value;
@@ -478,12 +482,31 @@ async function renderMap(){
     fMk.value=s.mk;
   };
   setMk();
-  document.getElementById("tablewrap").innerHTML=`<div id="map"></div><div id="maplist" style="margin-top:16px"></div>`;
+  document.getElementById("tablewrap").innerHTML=`<div id="map"></div><div id="zonetrend" style="margin-top:16px"></div><div id="maplist" style="margin-top:16px"></div>`;
   if(LMAP){LMAP.remove();LMAP=null;}
+  let ZTCHART=null;
+  const drawZoneTrend=async(nm)=>{
+    const ZT=await load("zone_trends");
+    const d=(ZT[s.mk]||{})[nm]||[];
+    const box=document.getElementById("zonetrend");
+    if(!d.length){box.innerHTML=`<div class="loading" style="padding:20px">「${nm}」此品項近年無足夠成交可繪趨勢。</div>`;return;}
+    box.innerHTML=`<div style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow)">
+      <h4 style="margin:0 0 8px;color:var(--navy)">${nm} · ${MK_LABEL[s.mk]} 季趨勢</h4><canvas id="ztc" height="90"></canvas></div>`;
+    if(ZTCHART)ZTCHART.destroy();
+    ZTCHART=new Chart(document.getElementById("ztc"),{data:{labels:d.map(x=>x.q),datasets:[
+      {type:"bar",label:"成交量(筆)",data:d.map(x=>x.n),yAxisID:"y",backgroundColor:"#cfe0ee",borderRadius:3,order:2},
+      {type:"line",label:"中位單價(萬/坪)",data:d.map(x=>x.med),yAxisID:"y1",borderColor:"#1a6fb0",borderWidth:2.5,pointRadius:2,tension:.25,order:1,spanGaps:true}
+    ]},options:{responsive:true,interaction:{mode:"index",intersect:false},
+      scales:{y:{position:"left",beginAtZero:true,grid:{color:"#f0f3f6"}},y1:{position:"right",grid:{drawOnChartArea:false}}},
+      plugins:{legend:{position:"top",labels:{boxWidth:14,font:{size:12}}}}}});
+    box.scrollIntoView({behavior:"smooth",block:"nearest"});
+  };
   LMAP=L.map('map',{scrollWheelZoom:true}).setView([24.97,121.24],11);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap',maxZoom:18}).addTo(LMAP);
   const draw=()=>{
     s.level=fLv.value; s.mk=fMk.value;
+    const zt=document.getElementById("zonetrend");
+    if(zt) zt.innerHTML = s.level==="zone"?`<div style="font-size:12.5px;color:var(--sub);padding:2px">💡 點地圖上的重劃區泡泡，看該區成交量與價格季趨勢</div>`:"";
     const nameCol = s.level==="zone"?"重劃區":"行政區";
     let entries;   // [name, [lat,lng], {n,med,avgtot}]
     if(s.level==="zone"){
@@ -502,6 +525,7 @@ async function renderMap(){
       const m=L.circleMarker(ll,{radius:12+34*Math.sqrt(v.n/maxN),color:"#fff",weight:1.5,fillColor:heat(pv(v),mn,mx),fillOpacity:.78});
       m.bindPopup(`<b>${nm}</b>（${MK_LABEL[s.mk]}）<br>成交量：${v.n.toLocaleString()} 筆<br><b style="color:#1a6fb0">近3年中位：${v.med3!=null?v.med3+' 萬/坪':'—'}</b><br>全期中位：${v.med} 萬/坪<br>平均總價：${v.avgtot?v.avgtot.toLocaleString()+' 萬':'—'}`);
       m.bindTooltip(`${nm} ${pv(v)}萬`,{permanent:true,direction:"center",className:"maptip"});
+      if(s.level==="zone") m.on("click",()=>drawZoneTrend(nm));
       m.addTo(LLAYER);
     });
     const cur=document.getElementById("fMk")?document.getElementById("fMk").selectedOptions[0].text:"";
@@ -549,6 +573,15 @@ async function renderTrends(){
 }
 
 /* ===== 共用 ===== */
+// 點欄位標題排序：th[data-sk] 對應排序下拉的值，點一下=切到該排序
+function wireSort(selId){
+  const sel=document.getElementById(selId); if(!sel)return;
+  document.querySelectorAll("#tablewrap thead th[data-sk]").forEach(th=>{
+    th.style.cursor="pointer"; th.title="點擊依此欄排序";
+    if(th.dataset.sk===sel.value) th.style.color="var(--blue)";
+    th.onclick=()=>{sel.value=th.dataset.sk; sel.dispatchEvent(new Event("input",{bubbles:true}));};
+  });
+}
 function empty(c){return `<tr><td colspan="${c}" style="text-align:center;padding:30px;color:#999">查無符合條件的資料</td></tr>`;}
 function insertDetail(tr,span,title,inner){
   const det=document.createElement("tr");det.className="detail";

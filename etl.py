@@ -290,18 +290,25 @@ dump("map_agg.json", map_agg)
 
 # ================= 地圖：重劃區(依地段歸類，可校正) =================
 # 對照表：重劃區 -> {中心座標, 對應地段清單}。歸類把握度高者優先，Khris(都計+代銷)可校正。
+# 地段歸類經「代表建案反查地段」實測校正(非臆測)。青埔依捷運站分A17/A18/A19。
 REDEV_ZONES = {
- "青埔高鐵特區":       {"c":[25.013,121.216],"segs":["青昇段","青山段","青平段","青芝段","青埔段","青江段","青塘段","青德段"]},
- "中路重劃區":         {"c":[24.983,121.290],"segs":["中路段","中路二段","中路三段"]},
- "小檜溪重劃區":       {"c":[24.966,121.288],"segs":["水汴頭段"]},
- "經國/埔子重劃區":    {"c":[24.999,121.293],"segs":["埔子段北門埔子小段","埔子段"]},
- "桃園站前/三民":      {"c":[24.989,121.313],"segs":["三民段","東門段","忠義段"]},
- "航空城客運園區":     {"c":[25.055,121.192],"segs":["客運一段","客運二段","客運三段"]},
- "中壢站前A22":        {"c":[24.953,121.225],"segs":["豐興段"]},
- "中壢青溪/A20":       {"c":[24.965,121.235],"segs":["青溪段"]},
- "龜山機捷A7/樂善":    {"c":[25.030,121.393],"segs":["善捷段","樂捷段"]},
- "蘆竹南崁":           {"c":[25.043,121.293],"segs":["上興段","新鼻段","大新段"]},
- "八德擴大重劃":       {"c":[24.930,121.285],"segs":["興仁段","明智段"]},
+ "青埔A18高鐵站":   {"c":[25.013,121.216],"segs":["青平段","青埔段","青昇段"]},
+ "青埔A19體育園區":  {"c":[25.005,121.234],"segs":["啟文段","青塘段"]},
+ "青埔A17領航站":   {"c":[25.034,121.220],"segs":["青山段","青芝段"]},
+ "中路重劃區":       {"c":[24.985,121.296],"segs":["中路段","中路二段","中路三段"]},
+ "小檜溪重劃區":     {"c":[24.996,121.303],"segs":["三民段"]},
+ "經國重劃區":       {"c":[24.999,121.289],"segs":["水汴頭段","龍祥段"]},
+ "藝文特區":         {"c":[25.007,121.302],"segs":["同安段","中埔段"]},
+ "大有/龍安":        {"c":[25.011,121.312],"segs":["大有段","忠義段"]},
+ "桃園站前":         {"c":[24.989,121.316],"segs":["東門段"]},
+ "航空城客運園區":   {"c":[25.055,121.192],"segs":["客運一段","客運二段","客運三段"]},
+ "中壢站前A22":      {"c":[24.953,121.225],"segs":["豐興段"]},
+ "中壢青溪":         {"c":[24.965,121.238],"segs":["青溪段"]},
+ "龜山機捷A7":       {"c":[25.030,121.393],"segs":["善捷段","樂捷段"]},
+ "蘆竹南崁":         {"c":[25.043,121.293],"segs":["上興段","新鼻段","大新段"]},
+ "八德擴大重劃":     {"c":[24.930,121.285],"segs":["興仁段","明智段"]},
+ "龍潭中正":         {"c":[24.864,121.216],"segs":["石門段"]},
+ "楊梅":             {"c":[24.908,121.146],"segs":["二重溪段","頭重溪段","大金山下段大金山下小段"]},
 }
 seg2zone={}
 for z,info in REDEV_ZONES.items():
@@ -345,6 +352,25 @@ trends={"presale":trend_agg([x for x in presale if not x["term"]],clean=True),
         "resale":trend_agg(RESALE_KEEP,clean=True),
         "land":trend_agg(land)}
 dump("trends.json", trends)
+
+# 各重劃區的季趨勢(供點擊重劃區看成交量/價格)
+def zone_trend(rows, clean=False):
+    g=defaultdict(lambda: defaultdict(list))
+    for r in rows:
+        z=seg2zone.get(r.get("seg",""))
+        if not z: continue
+        if clean and not (r.get("resi") and not r.get("special")): continue
+        q=quarter(r["date"])
+        if q and int(q[:4])>=2019: g[z][q].append(r)
+    out={}
+    for z,qs in g.items():
+        out[z]=[{"q":q,"n":len(qs[q]),
+                 "med":round(statistics.median([x["unit"] for x in qs[q] if x["unit"] and x["unit"]>0]),1) if [x for x in qs[q] if x["unit"] and x["unit"]>0] else None}
+                for q in sorted(qs)]
+    return out
+zone_trends={"presale":zone_trend([x for x in presale if not x["term"]],clean=True),
+             "resale":zone_trend(RESALE_KEEP,clean=True)}
+dump("zone_trends.json", zone_trends)
 
 # ================= meta =================
 seasons=sorted(set([r["season"] for r in presale]+[r["season"] for r in resale]+[r["season"] for r in land]))
