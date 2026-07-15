@@ -94,7 +94,7 @@ for zp in sorted(glob.glob(os.path.join(RAW, "*.zip"))):
                     "date":roc_to_ad(r[7]),"bt":(r[11] or "").strip(),"age":age if (age is not None and 0<=age<80) else None,
                     "rm":int(num(r[16]) or 0),"hl":int(num(r[17]) or 0),"ba":int(num(r[18]) or 0),
                     "fl":(r[9] or "").strip(),"tf":(r[10] or "").strip(),
-                    "unit":up,"total":tw,"park":(r[23] or "").strip(),"_keys":keys})
+                    "unit":up,"total":tw,"park":(r[23] or "").strip(),"note":(r[26] or "").strip(),"_keys":keys})
 
 # 用預售地號字典把建案名反貼到中古（交屋後轉售/預售換約後成屋）
 resale_hit = Counter()
@@ -143,38 +143,27 @@ def dump(name,obj): json.dump(obj,open(os.path.join(DATADIR,name),"w",encoding="
 dump("presale_projects.json", pprojects)
 dump("presale_tx.json", [[r["d"],r["proj"],r["addr"],r["date"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"],r["park"],r["term"]] for r in presale])
 
-# ================= 中古：逐筆 + 區×型態統計 =================
-dump("resale_tx.json", [[r["d"],r["addr"],r["date"],r["bt"],r["age"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"],r.get("proj") or ""] for r in resale])
-ga=defaultdict(list)
-for r in resale: ga[(r["d"],r["bt"])].append(r)
-resale_area=[]
-for (d,bt),lst in ga.items():
-    pr=[x["unit"] for x in lst if x["unit"] and x["unit"]>0]
-    ages=[x["age"] for x in lst if x["age"] is not None]
-    resale_area.append({"d":d,"bt":bt,"cnt":len(lst),
-        "avg":round(statistics.mean(pr),1) if pr else None,"med":round(statistics.median(pr),1) if pr else None,
-        "lo":round(min(pr),1) if pr else None,"hi":round(max(pr),1) if pr else None,
-        "age":round(statistics.median(ages)) if ages else None})
-resale_area.sort(key=lambda x:-x["cnt"])
-dump("resale_area.json", resale_area)
-
-# 中古：棟/社區聚合（門牌截到「號」= 同棟；只收 >=2 筆 = 有二次成交）
+# ================= 中古：精簡(仿trueway不做舊屋) + 棟聚合 + 檢便宜 =================
 import re as _re
 def bldg_key(addr):
     if not addr: return None
     m=_re.search("號", addr)
     return addr[:m.end()] if m else addr
+AGE_CUT = 20   # 只保留「有社區名」或「屋齡<=20」的中古(砍老舊無識別)
+RESALE_KEEP = [r for r in resale if r.get("proj") or (r["age"] is not None and r["age"] <= AGE_CUT)]
+
+# 棟/社區聚合(門牌截到「號」=同棟；>=2筆=有二次成交) + 每棟中位數(供檢便宜基準)
 gb=defaultdict(list)
-for r in resale:
-    bk=bldg_key(r["addr"])
+for r in RESALE_KEEP:
+    bk=bldg_key(r["addr"]); r["_bk"]=bk
     if bk: gb[(r["d"],bk)].append(r)
-resale_bldg=[]
+bldg_med={}; resale_bldg=[]
 for (d,bk),lst in gb.items():
-    if len(lst)<2: continue  # 只保留有二次成交的棟
     pr=[x["unit"] for x in lst if x["unit"] and x["unit"]>0]
+    if pr: bldg_med[(d,bk)]=statistics.median(pr)
+    if len(lst)<2: continue
     dates=[x["date"] for x in lst if x["date"]]
-    bt=Counter(x["bt"] for x in lst if x["bt"])
-    pj=Counter(x["proj"] for x in lst if x.get("proj"))
+    bt=Counter(x["bt"] for x in lst if x["bt"]); pj=Counter(x["proj"] for x in lst if x.get("proj"))
     resale_bldg.append({"d":d,"b":bk,"cnt":len(lst),
         "avg":round(statistics.mean(pr),1) if pr else None,"med":round(statistics.median(pr),1) if pr else None,
         "lo":round(min(pr),1) if pr else None,"hi":round(max(pr),1) if pr else None,
@@ -182,7 +171,42 @@ for (d,bk),lst in gb.items():
         "bt":(bt.most_common(1)[0][0] if bt else ""),"proj":(pj.most_common(1)[0][0] if pj else "")})
 resale_bldg.sort(key=lambda x:-x["cnt"])
 dump("resale_bldg.json", resale_bldg)
-print(f"  中古棟聚合(>=2筆): {len(resale_bldg)} 棟")
+
+# 區×型態統計 + 中位數(檢便宜次要基準)
+ga=defaultdict(list)
+for r in RESALE_KEEP: ga[(r["d"],r["bt"])].append(r)
+area_med={}; resale_area=[]
+for (d,bt),lst in ga.items():
+    pr=[x["unit"] for x in lst if x["unit"] and x["unit"]>0]
+    ages=[x["age"] for x in lst if x["age"] is not None]
+    if pr: area_med[(d,bt)]=statistics.median(pr)
+    resale_area.append({"d":d,"bt":bt,"cnt":len(lst),
+        "avg":round(statistics.mean(pr),1) if pr else None,"med":round(statistics.median(pr),1) if pr else None,
+        "lo":round(min(pr),1) if pr else None,"hi":round(max(pr),1) if pr else None,
+        "age":round(statistics.median(ages)) if ages else None})
+resale_area.sort(key=lambda x:-x["cnt"])
+dump("resale_area.json", resale_area)
+
+# 檢便宜：每筆相對「同棟中位數(優先)或同區同型態中位數」的價差%
+def gap_of(r):
+    u=r["unit"]
+    if not u or u<=0: return None
+    base=bldg_med.get((r["d"],r.get("_bk"))) or area_med.get((r["d"],r["bt"]))
+    if not base: return None
+    return round((u-base)/base*100)
+dump("resale_tx.json", [[r["d"],r["addr"],r["date"],r["bt"],r["age"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"],r.get("proj") or "",gap_of(r)] for r in RESALE_KEEP])
+SPECIAL=("親","關係","債","員工","含增建","含裝潢","瑕疵","急","坪數含","facilities","特殊","分算","含未登記","毛胚","增建")
+bargains=[]
+for r in RESALE_KEEP:
+    g=gap_of(r)
+    note=r.get("note","")
+    # 只收合理便宜區間(-35%~-8%)、有社區名、單價>=15萬/坪、非特殊交易(排除異常低價)
+    if g is not None and -35<=g<=-8 and r.get("proj") and r["unit"] and r["unit"]>=15 \
+       and not any(k in note for k in SPECIAL):
+        bargains.append([r["d"],r["addr"],r["date"],r.get("proj"),r["bt"],r["age"],r["unit"],r["total"],g])
+bargains.sort(key=lambda x:x[8])
+dump("resale_bargains.json", bargains[:2000])
+print(f"  中古精簡 {len(RESALE_KEEP):,}/{len(resale):,} | 棟聚合 {len(resale_bldg):,} | 檢便宜 {len(bargains):,}筆")
 
 # ================= 土地：逐筆 + 區×分區統計 =================
 dump("land_tx.json", [[r["d"],r["addr"],r["date"],r["zone"],r["area"],r["unit"],r["total"]] for r in land])
@@ -203,12 +227,13 @@ districts=sorted(set([r["d"] for r in presale]+[r["d"] for r in resale]+[r["d"] 
 def rng(rows):  # 過濾明顯髒日期(<2000)，回傳真實 min/max
     ds=sorted(x["date"] for x in rows if x["date"] and x["date"]>="2000-01-01")
     return (ds[0], ds[-1]) if ds else (None, None)
-p_min,p_max=rng(presale); r_min,r_max=rng(resale); l_min,l_max=rng(land)
+p_min,p_max=rng(presale); r_min,r_max=rng(RESALE_KEEP); l_min,l_max=rng(land)
 alldates=[d for d in (p_min,p_max,r_min,r_max,l_min,l_max) if d]
 meta={"seasons":seasons,"districts":districts,
     "presale_tx":len(presale),"presale_projects":len(pprojects),"presale_term":sum(r["term"] for r in presale),
-    "resale_tx":len(resale),"land_tx":len(land),
-    "resale_named":sum(1 for x in resale if x.get("proj")),"resale_named_projects":len(resale_hit),
+    "resale_tx":len(RESALE_KEEP),"resale_tx_all":len(resale),"land_tx":len(land),
+    "resale_named":sum(1 for x in RESALE_KEEP if x.get("proj")),"resale_named_projects":len(resale_hit),
+    "resale_bargains":len(bargains[:2000]),
     "presale_min":p_min,"presale_max":p_max,"resale_min":r_min,"resale_max":r_max,"land_min":l_min,"land_max":l_max,
     "date_min":min(alldates),"date_max":max(alldates)}
 json.dump(meta,open(os.path.join(DATADIR,"meta.json"),"w",encoding="utf-8"),ensure_ascii=False,indent=1)

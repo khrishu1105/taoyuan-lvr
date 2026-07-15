@@ -94,6 +94,7 @@ const TABS=[
   {id:"presale",label:"預售屋",color:"var(--presale)"},
   {id:"resale", label:"中古/成屋",color:"var(--resale)"},
   {id:"land",   label:"土地",color:"var(--land)"},
+  {id:"bargain",label:"檢便宜",color:"var(--good)"},
 ];
 
 const SOURCE = `資料源：<b>內政部不動產成交案件實際資訊</b>（實價登錄開放資料·每旬更新）· 桃園市`;
@@ -110,6 +111,7 @@ async function boot(){
   document.getElementById("n_presale").textContent = META.presale_projects+" 案";
   document.getElementById("n_resale").textContent = (META.resale_tx/1000).toFixed(0)+"k 筆";
   document.getElementById("n_land").textContent = (META.land_tx/1000).toFixed(0)+"k 筆";
+  document.getElementById("n_bargain").textContent = (META.resale_bargains||0)+" 筆";
   document.querySelectorAll(".tab").forEach(el=>el.addEventListener("click",()=>switchTab(el.dataset.t)));
   document.getElementById("foot").innerHTML =
     `口徑：單價＝內政部「單價元/平方公尺」換算萬/坪(×3.305785)。預售「有效筆數＝總筆－解約」(多數比價站不拆)。`+
@@ -122,7 +124,7 @@ function switchTab(t){
   TAB=t;
   document.querySelectorAll(".tab").forEach(el=>el.classList.toggle("on",el.dataset.t===t));
   setSub(t);
-  ({presale:renderPresale,resale:renderResale,land:renderLand})[t]();
+  ({presale:renderPresale,resale:renderResale,land:renderLand,bargain:renderBargains})[t]();
 }
 
 function distOptions(){return `<option value="">全部</option>`+META.districts.map(d=>`<option>${d}</option>`).join("");}
@@ -322,6 +324,54 @@ function lRow(r){return `<tr>
   <td class="hidem">${r[3]||''}</td><td>${r[4]!=null?r[4].toLocaleString():'<span class="muted">—</span>'}</td>
   <td class="price">${r[5]!=null?r[5].toFixed(1):'<span class="muted">—</span>'}</td>
   <td>${r[6]!=null?r[6].toLocaleString():'<span class="muted">—</span>'}</td>
+  <td class="l"><span class="rng">${r[2]||''}</span></td></tr>`;}
+
+/* ================= 檢便宜（低於同社區中位的成交） ================= */
+async function renderBargains(){
+  document.getElementById("tablewrap").innerHTML=`<div class="loading">載入檢便宜清單…</div>`;
+  const B=await load("resale_bargains");
+  const s=state.bargain=state.bargain||{page:0};
+  statCards([["便宜物件",B.length.toLocaleString(),"筆"],["判定基準","同社區中位"],["價差區間","−8%～−35%"],
+    ["只收","有社區名"],["涵蓋",META.resale_min.slice(0,7),`~${META.resale_max.slice(0,7)}`]]);
+  document.getElementById("filters").innerHTML=`
+    <label>行政區<select id="fD">${distOptions()}</select></label>
+    <label>社區/建案關鍵字<input type="text" id="fQ" placeholder="社區名"></label>
+    <label>排序<select id="fS"><option value="gap">最便宜↓</option><option value="date">交易日↓</option><option value="unit">單價↓</option></select></label>
+    <span class="count" id="cnt"></span>`;
+  const per=50;
+  const paint=()=>{
+    const pg=s.page,slice=s.list.slice(pg*per,pg*per+per);
+    document.getElementById("tablewrap").innerHTML=`<table><thead><tr>
+      <th class="l">社區/建案</th><th class="l">門牌</th><th class="hidem">型態</th><th>屋齡</th>
+      <th>單價<br><small>萬/坪</small></th><th>較社區<br><small>中位</small></th><th>總價<br><small>萬</small></th><th class="l">交易日</th>
+      </tr></thead><tbody>${slice.map(gRow).join("")||empty(8)}</tbody></table>
+      <div class="pager"><button id="pp" ${pg<=0?'disabled':''}>‹ 上一頁</button>
+      <span>第 ${pg+1} / ${Math.max(1,Math.ceil(s.list.length/per))} 頁</span>
+      <button id="pn" ${(pg+1)*per>=s.list.length?'disabled':''}>下一頁 ›</button></div>`;
+    const pp=document.getElementById("pp"),pn=document.getElementById("pn");
+    if(pp)pp.onclick=()=>{s.page--;paint();window.scrollTo(0,0);};
+    if(pn)pn.onclick=()=>{s.page++;paint();window.scrollTo(0,0);};
+  };
+  const draw=()=>{
+    const d=fD.value,q=fQ.value.trim(),sk=fS.value;
+    let list=B.filter(r=>(!d||r[0]===d)&&(!q||(r[3]||"").includes(q)));
+    if(sk==="gap")list.sort((a,b)=>a[8]-b[8]);
+    else if(sk==="date")list.sort((a,b)=>(b[2]||"").localeCompare(a[2]||""));
+    else list.sort((a,b)=>a[6]-b[6]);
+    s.list=list; s.page=Math.min(s.page,Math.floor(Math.max(0,list.length-1)/per));
+    cnt.textContent=`符合 ${list.length.toLocaleString()} 筆`;
+    paint();
+  };
+  ["fD","fQ","fS"].forEach(id=>document.getElementById(id).addEventListener("input",()=>{s.page=0;draw();}));
+  draw();
+}
+function gRow(r){return `<tr>
+  <td class="l"><span class="dist">${r[0]}</span><span class="pname">${r[3]}</span></td>
+  <td class="l">${shortAddr(r[0],r[1])}</td><td class="hidem">${r[4]||''}</td>
+  <td>${r[5]!=null?r[5]+'年':'<span class="muted">—</span>'}</td>
+  <td class="price">${r[6]!=null?r[6].toFixed(1):'<span class="muted">—</span>'}</td>
+  <td><b style="color:var(--good)">${r[8]}%</b></td>
+  <td>${r[7]!=null?r[7].toLocaleString():'<span class="muted">—</span>'}</td>
   <td class="l"><span class="rng">${r[2]||''}</span></td></tr>`;}
 
 /* ===== 共用 ===== */
