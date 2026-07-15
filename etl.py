@@ -14,7 +14,9 @@ PING = 3.305785
 def roc_to_ad(s):
     s = (s or "").strip()
     if not s.isdigit() or len(s) < 6: return None
-    return f"{int(s[:-4])+1911}-{s[-4:-2]}-{s[-2:]}"
+    y = int(s[:-4]) + 1911; mm = s[-4:-2]; dd = s[-2:]
+    if y < 2000 or y > 2027 or not ("01" <= mm <= "12"): return None  # 濾髒日期(如2101/1922)
+    return f"{y}-{mm}-{dd}"
 
 def roc_year(s):
     s = (s or "").strip()
