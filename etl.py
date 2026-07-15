@@ -31,27 +31,45 @@ def read_csv_from_zip(z, suffix):
     return list(csv.reader(io.StringIO(z.read(cands[0]).decode("utf-8-sig"))))
 
 presale, resale, land = [], [], []
+presale_parcel = {}   # (區,地段,地號) -> 建案名；用來把建案名反貼到中古(交屋後轉售)
 
 for zp in sorted(glob.glob(os.path.join(RAW, "*.zip"))):
     season = os.path.basename(zp).replace(".zip", "")
     ad_year = 1911 + int(season[:3])
     z = zipfile.ZipFile(zp)
 
-    # ---- 預售屋 (_b) ----
+    # ---- 預售屋 (_b) + 土地子表(_b_land 供地號字典) ----
     rr = read_csv_from_zip(z, "h_lvr_land_b.csv")
+    proj_by_eid = {}   # 編號 -> (建案名, 區)
     if rr:
         for r in rr[2:]:
             if len(r) < 30: continue
             u = num(r[22]); up = round(u*PING/10000,2) if u else None
             t = num(r[21])
-            presale.append({"season":season,"d":r[0].strip(),"proj":(r[28] or "").strip() or "（未填建案名）",
+            proj = (r[28] or "").strip() or "（未填建案名）"
+            eid = (r[27] or "").strip() if len(r) > 27 else ""
+            if eid and proj != "（未填建案名）": proj_by_eid[eid] = (proj, r[0].strip())
+            presale.append({"season":season,"d":r[0].strip(),"proj":proj,
                 "addr":(r[2] or "").strip(),"date":roc_to_ad(r[7]),
                 "rm":int(num(r[16]) or 0),"hl":int(num(r[17]) or 0),"ba":int(num(r[18]) or 0),
                 "fl":(r[9] or "").strip(),"tf":(r[10] or "").strip(),"bt":(r[11] or "").strip(),
                 "unit":up,"total":round(t/10000) if t else None,"park":(r[23] or "").strip(),
                 "term":1 if (len(r)>30 and (r[30] or "").strip()) else 0})
+    bl = read_csv_from_zip(z, "h_lvr_land_b_land.csv")
+    if bl:
+        for r in bl[2:]:
+            if len(r) < 8: continue
+            eid = (r[0] or "").strip()
+            if eid in proj_by_eid:
+                proj, dist = proj_by_eid[eid]
+                presale_parcel[(dist, (r[1] or "").strip(), (r[7] or "").strip())] = proj
 
-    # ---- 中古/成屋 & 土地 (_a) ----
+    # ---- 中古/成屋 & 土地 (_a) + 土地子表(_a_land 供地號比對) ----
+    al = read_csv_from_zip(z, "h_lvr_land_a_land.csv")
+    aparc = defaultdict(set)   # 編號 -> {(地段,地號)}
+    if al:
+        for r in al[2:]:
+            if len(r) >= 8: aparc[(r[0] or "").strip()].add(((r[1] or "").strip(), (r[7] or "").strip()))
     rr = read_csv_from_zip(z, "h_lvr_land_a.csv")
     if rr:
         for r in rr[2:]:
@@ -64,16 +82,28 @@ for zp in sorted(glob.glob(os.path.join(RAW, "*.zip"))):
                 land.append({"season":season,"d":r[0].strip(),"addr":(r[2] or "").strip(),
                     "date":roc_to_ad(r[7]),"zone":(r[4] or "").strip() or (r[5] or "").strip(),
                     "area":area_ping,"unit":up,"total":tw})
-            elif "建物" in target:  # 房地(土地+建物)、…+車位、建物
+            elif "建物" in target:
                 by = roc_year(r[14])
                 age = (ad_year - by) if by else None
-                resale.append({"season":season,"d":r[0].strip(),"addr":(r[2] or "").strip(),
+                d = r[0].strip()
+                eid = (r[27] or "").strip()
+                keys = {(d, seg, no) for (seg, no) in aparc.get(eid, ())}
+                resale.append({"season":season,"d":d,"addr":(r[2] or "").strip(),
                     "date":roc_to_ad(r[7]),"bt":(r[11] or "").strip(),"age":age if (age is not None and 0<=age<80) else None,
                     "rm":int(num(r[16]) or 0),"hl":int(num(r[17]) or 0),"ba":int(num(r[18]) or 0),
                     "fl":(r[9] or "").strip(),"tf":(r[10] or "").strip(),
-                    "unit":up,"total":tw,"park":(r[23] or "").strip()})
+                    "unit":up,"total":tw,"park":(r[23] or "").strip(),"_keys":keys})
 
-print(f"預售 {len(presale)} | 中古 {len(resale)} | 土地 {len(land)}")
+# 用預售地號字典把建案名反貼到中古（交屋後轉售/預售換約後成屋）
+resale_hit = Counter()
+for r in resale:
+    proj = None
+    for k in r["_keys"]:
+        if k in presale_parcel: proj = presale_parcel[k]; break
+    r["proj"] = proj
+    del r["_keys"]
+    if proj: resale_hit[proj] += 1
+print(f"預售 {len(presale)} | 中古 {len(resale)} | 土地 {len(land)} | 中古對到建案名 {sum(resale_hit.values()):,} 筆/{len(resale_hit)} 建案")
 
 # ================= SQLite =================
 if os.path.exists(DB): os.remove(DB)
@@ -81,12 +111,12 @@ con = sqlite3.connect(DB); cur = con.cursor()
 cur.execute("""CREATE TABLE presale(season,district,project,addr,tdate,rooms INT,halls INT,baths INT,
   floor,totfloor,btype,unit_ping REAL,total_wan INT,park,terminated INT)""")
 cur.execute("""CREATE TABLE resale(season,district,addr,tdate,btype,age INT,rooms INT,halls INT,baths INT,
-  floor,totfloor,unit_ping REAL,total_wan INT,park)""")
+  floor,totfloor,unit_ping REAL,total_wan INT,park,project)""")
 cur.execute("""CREATE TABLE land(season,district,addr,tdate,zone,area_ping REAL,unit_ping REAL,total_wan INT)""")
 cur.executemany("INSERT INTO presale VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
   [(x["season"],x["d"],x["proj"],x["addr"],x["date"],x["rm"],x["hl"],x["ba"],x["fl"],x["tf"],x["bt"],x["unit"],x["total"],x["park"],x["term"]) for x in presale])
-cur.executemany("INSERT INTO resale VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-  [(x["season"],x["d"],x["addr"],x["date"],x["bt"],x["age"],x["rm"],x["hl"],x["ba"],x["fl"],x["tf"],x["unit"],x["total"],x["park"]) for x in resale])
+cur.executemany("INSERT INTO resale VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+  [(x["season"],x["d"],x["addr"],x["date"],x["bt"],x["age"],x["rm"],x["hl"],x["ba"],x["fl"],x["tf"],x["unit"],x["total"],x["park"],x.get("proj")) for x in resale])
 cur.executemany("INSERT INTO land VALUES(?,?,?,?,?,?,?,?)",
   [(x["season"],x["d"],x["addr"],x["date"],x["zone"],x["area"],x["unit"],x["total"]) for x in land])
 con.commit()
@@ -100,7 +130,7 @@ for (d, proj), lst in g.items():
     priced=[x["unit"] for x in valid if x["unit"] and x["unit"]>0]
     dates=[x["date"] for x in valid if x["date"]]; tots=[x["total"] for x in valid if x["total"]]
     rc=Counter(x["rm"] for x in valid if x["rm"])
-    pprojects.append({"d":d,"n":proj,"cnt":len(lst),"valid":len(valid),"term":sum(x["term"] for x in lst),
+    pprojects.append({"d":d,"n":proj,"cnt":len(lst),"valid":len(valid),"term":sum(x["term"] for x in lst),"resale":resale_hit.get(proj,0),
         "avg":round(statistics.mean(priced),1) if priced else None,"med":round(statistics.median(priced),1) if priced else None,
         "lo":round(min(priced),1) if priced else None,"hi":round(max(priced),1) if priced else None,
         "avgtot":round(statistics.mean(tots)) if tots else None,
@@ -112,7 +142,7 @@ dump("presale_projects.json", pprojects)
 dump("presale_tx.json", [[r["d"],r["proj"],r["addr"],r["date"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"],r["park"],r["term"]] for r in presale])
 
 # ================= 中古：逐筆 + 區×型態統計 =================
-dump("resale_tx.json", [[r["d"],r["addr"],r["date"],r["bt"],r["age"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"]] for r in resale])
+dump("resale_tx.json", [[r["d"],r["addr"],r["date"],r["bt"],r["age"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"],r.get("proj") or ""] for r in resale])
 ga=defaultdict(list)
 for r in resale: ga[(r["d"],r["bt"])].append(r)
 resale_area=[]
@@ -142,11 +172,12 @@ for (d,bk),lst in gb.items():
     pr=[x["unit"] for x in lst if x["unit"] and x["unit"]>0]
     dates=[x["date"] for x in lst if x["date"]]
     bt=Counter(x["bt"] for x in lst if x["bt"])
+    pj=Counter(x["proj"] for x in lst if x.get("proj"))
     resale_bldg.append({"d":d,"b":bk,"cnt":len(lst),
         "avg":round(statistics.mean(pr),1) if pr else None,"med":round(statistics.median(pr),1) if pr else None,
         "lo":round(min(pr),1) if pr else None,"hi":round(max(pr),1) if pr else None,
         "p1":min(dates) if dates else None,"p2":max(dates) if dates else None,
-        "bt":(bt.most_common(1)[0][0] if bt else "")})
+        "bt":(bt.most_common(1)[0][0] if bt else ""),"proj":(pj.most_common(1)[0][0] if pj else "")})
 resale_bldg.sort(key=lambda x:-x["cnt"])
 dump("resale_bldg.json", resale_bldg)
 print(f"  中古棟聚合(>=2筆): {len(resale_bldg)} 棟")
@@ -175,6 +206,7 @@ alldates=[d for d in (p_min,p_max,r_min,r_max,l_min,l_max) if d]
 meta={"seasons":seasons,"districts":districts,
     "presale_tx":len(presale),"presale_projects":len(pprojects),"presale_term":sum(r["term"] for r in presale),
     "resale_tx":len(resale),"land_tx":len(land),
+    "resale_named":sum(1 for x in resale if x.get("proj")),"resale_named_projects":len(resale_hit),
     "presale_min":p_min,"presale_max":p_max,"resale_min":r_min,"resale_max":r_max,"land_min":l_min,"land_max":l_max,
     "date_min":min(alldates),"date_max":max(alldates)}
 json.dump(meta,open(os.path.join(DATADIR,"meta.json"),"w",encoding="utf-8"),ensure_ascii=False,indent=1)

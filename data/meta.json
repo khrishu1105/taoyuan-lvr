@@ -40,6 +40,8 @@
  "presale_term": 320,
  "resale_tx": 171735,
  "land_tx": 43447,
+ "resale_named": 70967,
+ "resale_named_projects": 813,
  "presale_min": "2021-11-11",
  "presale_max": "2026-05-10",
  "resale_min": "2008-03-22",

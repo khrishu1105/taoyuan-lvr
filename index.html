@@ -113,7 +113,7 @@ async function boot(){
   document.querySelectorAll(".tab").forEach(el=>el.addEventListener("click",()=>switchTab(el.dataset.t)));
   document.getElementById("foot").innerHTML =
     `口徑：單價＝內政部「單價元/平方公尺」換算萬/坪(×3.305785)。預售「有效筆數＝總筆－解約」(多數比價站不拆)。`+
-    `筆數≠戶數(含車位分列、簽約時間差；預售2021/7前為舊制)。中古依「區×型態」統計、土地依「區×使用分區」。`+
+    `筆數≠戶數(含車位分列、簽約時間差；預售2021/7前為舊制)。<b>中古的「社區/建案名」是用地號比對我方預售資料自動推得</b>(內政部中古開放資料本身無社區名)，只標對得到的、無把握就留空；預售分頁「中古轉售」=該建案交屋後已被轉售的中古筆數。`+
     `<br>本工具為靜態頁，資料源內政部政府開放資料(可重製散布，須標示來源)，非官方系統。更新：重跑 etl.py。 · 製作 khrishu`;
   switchTab("presale");
 }
@@ -151,8 +151,8 @@ async function renderPresale(){
     cnt.textContent=`符合 ${list.length} 案 / 共 ${P.length}`;
     document.getElementById("tablewrap").innerHTML=`<table><thead><tr>
       <th class="l">建案 / 行政區</th><th>有效/總</th><th class="hidem">解約</th><th>均價<br><small>萬/坪</small></th>
-      <th class="hidem">中位</th><th>單價區間</th><th>均總價<br><small>萬</small></th><th class="hidem">主力房</th><th class="l">登錄期間</th>
-      </tr></thead><tbody>${list.slice(0,400).map(pRow).join("")||empty(9)}</tbody></table>`;
+      <th class="hidem">中位</th><th>單價區間</th><th>均總價<br><small>萬</small></th><th class="hidem">主力房</th><th>中古<br><small>轉售</small></th><th class="l">登錄期間</th>
+      </tr></thead><tbody>${list.slice(0,400).map(pRow).join("")||empty(10)}</tbody></table>`;
     document.querySelectorAll("tr.prow").forEach(tr=>tr.addEventListener("click",()=>drillPresale(tr)));
   };
   ["fD","fQ","fMin","fTerm","fS"].forEach(id=>document.getElementById(id).addEventListener("input",draw));
@@ -166,6 +166,7 @@ function pRow(p){return `<tr class="prow" data-k="${encodeURIComponent(p.d+"|"+p
   <td>${p.lo!=null?`<span class="rng">${fmt(p.lo)}–${fmt(p.hi)}</span>`:'<span class="muted">—</span>'}</td>
   <td>${p.avgtot?p.avgtot.toLocaleString():'<span class="muted">—</span>'}</td>
   <td class="hidem">${p.room?p.room+'房':'<span class="muted">—</span>'}</td>
+  <td>${p.resale?`<span class="term" style="color:var(--resale)">${p.resale}</span>`:'<span class="muted">0</span>'}</td>
   <td class="l"><span class="rng">${p.p1||''} ~ ${p.p2||''}</span></td></tr>`;}
 async function drillPresale(tr){
   const nx=tr.nextElementSibling; if(nx&&nx.classList.contains("detail")){nx.remove();return;}
@@ -190,7 +191,8 @@ async function renderResale(){
   const s=state.resale; s.page=s.page||0; s.mode=s.mode||"list";
   const btypes=[...new Set(AREA.map(a=>a.bt))];
   statCards([["中古逐筆",META.resale_tx.toLocaleString()],["有二次成交社區",BLDG.length.toLocaleString(),"棟"],
-    ["建物型態",btypes.length,"種"],["季別",META.seasons.length,"季"],["涵蓋",META.resale_min.slice(0,7),`~${META.resale_max.slice(0,7)}`]]);
+    ["已對到建案名",META.resale_named.toLocaleString(),`(${(META.resale_named/META.resale_tx*100).toFixed(0)}%)`],
+    ["季別",META.seasons.length,"季"],["涵蓋",META.resale_min.slice(0,7),`~${META.resale_max.slice(0,7)}`]]);
   document.getElementById("filters").innerHTML=`
     <label>檢視<select id="fMode"><option value="list">逐筆明細</option><option value="bldg">社區/棟聚合（二次成交）</option></select></label>
     <label>行政區<select id="fD">${distOptions()}</select></label>
@@ -212,13 +214,13 @@ async function renderResale(){
     const list=s.list,pg=s.page,slice=list.slice(pg*per,pg*per+per);
     let html;
     if(s.mode==="bldg"){
-      html=`<table><thead><tr><th class="l">社區/棟（門牌到「號」）</th><th>成交<br><small>筆數</small></th>
+      html=`<table><thead><tr><th class="l">建案名</th><th class="l">社區/棟（門牌到「號」）</th><th>成交<br><small>筆數</small></th>
         <th class="hidem">型態</th><th>均價<br><small>萬/坪</small></th><th class="hidem">中位</th><th>單價區間</th><th class="l">成交期間</th>
-        </tr></thead><tbody>${slice.map(bRow).join("")||empty(7)}</tbody></table>`+pager(list.length,pg);
+        </tr></thead><tbody>${slice.map(bRow).join("")||empty(8)}</tbody></table>`+pager(list.length,pg);
     }else{
-      html=`<table><thead><tr><th class="l">門牌 / 行政區</th><th class="hidem">型態</th><th>屋齡</th><th>格局</th>
+      html=`<table><thead><tr><th class="l">社區/建案</th><th class="l">門牌 / 行政區</th><th class="hidem">型態</th><th>屋齡</th><th>格局</th>
         <th class="hidem">樓/總</th><th>單價<br><small>萬/坪</small></th><th>總價<br><small>萬</small></th><th class="l">交易日</th>
-        </tr></thead><tbody>${slice.map(rRow).join("")||empty(8)}</tbody></table>`+pager(list.length,pg);
+        </tr></thead><tbody>${slice.map(rRow).join("")||empty(9)}</tbody></table>`+pager(list.length,pg);
     }
     document.getElementById("tablewrap").innerHTML=html;
     const pp=document.getElementById("pp"),pn=document.getElementById("pn");
@@ -232,12 +234,12 @@ async function renderResale(){
     document.getElementById("wAge").style.display=s.mode==="bldg"?"none":"";
     const d=fD.value,q=fQ.value.trim(),sk=fS.value;
     if(s.mode==="bldg"){
-      let list=BLDG.filter(r=>(!d||r.d===d)&&(!q||(r.b||"").includes(q)));
+      let list=BLDG.filter(r=>(!d||r.d===d)&&(!q||(r.b||"").includes(q)||(r.proj||"").includes(q)));
       list.sort((a,b)=>{if(sk==="p2")return (b.p2||"").localeCompare(a.p2||"");return (b[sk]??-1)-(a[sk]??-1);});
       s.list=list; cnt.textContent=`符合 ${list.length.toLocaleString()} 棟（皆 2 筆以上成交）`;
     }else{
       const b=fB.value,ag=+fAge.value||0;
-      let list=TX.filter(r=>(!d||r[0]===d)&&(!b||r[3]===b)&&(!q||(r[1]||"").includes(q))&&(!ag||(r[4]!=null&&r[4]<=ag)));
+      let list=TX.filter(r=>(!d||r[0]===d)&&(!b||r[3]===b)&&(!q||(r[1]||"").includes(q)||(r[12]||"").includes(q))&&(!ag||(r[4]!=null&&r[4]<=ag)));
       const idx={date:2,unit:10,total:11}[sk]||2;
       list.sort((a,b2)=>{if(sk==="date")return (b2[2]||"").localeCompare(a[2]||"");return (b2[idx]??-1)-(a[idx]??-1);});
       s.list=list; cnt.textContent=`符合 ${list.length.toLocaleString()} 筆`;
@@ -250,6 +252,7 @@ async function renderResale(){
   draw();
 }
 function rRow(r){return `<tr>
+  <td class="l">${r[12]?`<span class="pname">${r[12]}</span>`:'<span class="muted">—</span>'}</td>
   <td class="l"><span class="dist">${r[0]}</span>${shortAddr(r[0],r[1])}</td>
   <td class="hidem">${r[3]||''}</td><td>${r[4]!=null?r[4]+'年':'<span class="muted">—</span>'}</td>
   <td>${r[5]}房${r[6]}廳${r[7]}衛</td><td class="hidem">${r[8]||''}/${r[9]||''}</td>
@@ -257,7 +260,8 @@ function rRow(r){return `<tr>
   <td>${r[11]!=null?r[11].toLocaleString():'<span class="muted">—</span>'}</td>
   <td class="l"><span class="rng">${r[2]||''}</span></td></tr>`;}
 function bRow(r){return `<tr class="prow" data-k="${encodeURIComponent(r.d+"|"+r.b)}">
-  <td class="l"><span class="dist">${r.d}</span><span class="pname">${shortAddr(r.d,r.b)}</span></td>
+  <td class="l">${r.proj?`<span class="pname">${r.proj}</span>`:'<span class="muted">—</span>'}</td>
+  <td class="l"><span class="dist">${r.d}</span>${shortAddr(r.d,r.b)}</td>
   <td class="price">${r.cnt}</td><td class="hidem">${r.bt||''}</td>
   <td class="price">${fmt(r.avg)}</td><td class="hidem">${fmt(r.med)}</td>
   <td>${r.lo!=null?`<span class="rng">${fmt(r.lo)}–${fmt(r.hi)}</span>`:'<span class="muted">—</span>'}</td>
@@ -269,7 +273,7 @@ async function drillBldg(tr,TX){
   const body=rows.map(r=>`<tr><td>${r[2]||''}</td><td style="text-align:left">${shortAddr(r[0],r[1])}</td>
     <td>${r[3]||''}</td><td>${r[4]!=null?r[4]+'年':''}</td><td>${r[5]}房${r[6]}廳${r[7]}衛</td><td>${r[8]||''}/${r[9]||''}</td>
     <td style="text-align:right">${r[10]!=null?r[10].toFixed(1):'—'}</td><td style="text-align:right">${r[11]!=null?r[11].toLocaleString():'—'}</td></tr>`).join("");
-  insertDetail(tr,7,`此棟歷次成交（${rows.length} 筆，最新在上）— 二次成交/轉手一覽`,
+  insertDetail(tr,8,`此棟歷次成交（${rows.length} 筆，最新在上）— 二次成交/轉手一覽`,
     `<thead><tr><th>交易日</th><th style="text-align:left">門牌(含樓)</th><th>型態</th><th>屋齡</th><th>格局</th><th>樓/總</th><th style="text-align:right">單價萬/坪</th><th style="text-align:right">總價萬</th></tr></thead><tbody>${body}</tbody>`);
 }
 
