@@ -486,19 +486,30 @@ async function renderMap(){
   if(LMAP){LMAP.remove();LMAP=null;}
   let ZTCHART=null;
   const drawZoneTrend=async(nm)=>{
-    const ZT=await load("zone_trends");
+    const [ZT,ZB]=await Promise.all([load("zone_trends"),load("zone_breakdown")]);
     const d=(ZT[s.mk]||{})[nm]||[];
+    const bd=(ZB[s.mk]||{})[nm]||[];
     const box=document.getElementById("zonetrend");
-    if(!d.length){box.innerHTML=`<div class="loading" style="padding:20px">「${nm}」此品項近年無足夠成交可繪趨勢。</div>`;return;}
-    box.innerHTML=`<div style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow)">
-      <h4 style="margin:0 0 8px;color:var(--navy)">${nm} · ${MK_LABEL[s.mk]} 季趨勢</h4><canvas id="ztc" height="90"></canvas></div>`;
-    if(ZTCHART)ZTCHART.destroy();
-    ZTCHART=new Chart(document.getElementById("ztc"),{data:{labels:d.map(x=>x.q),datasets:[
-      {type:"bar",label:"成交量(筆)",data:d.map(x=>x.n),yAxisID:"y",backgroundColor:"#cfe0ee",borderRadius:3,order:2},
-      {type:"line",label:"中位單價(萬/坪)",data:d.map(x=>x.med),yAxisID:"y1",borderColor:"#1a6fb0",borderWidth:2.5,pointRadius:2,tension:.25,order:1,spanGaps:true}
-    ]},options:{responsive:true,interaction:{mode:"index",intersect:false},
-      scales:{y:{position:"left",beginAtZero:true,grid:{color:"#f0f3f6"}},y1:{position:"right",grid:{drawOnChartArea:false}}},
-      plugins:{legend:{position:"top",labels:{boxWidth:14,font:{size:12}}}}}});
+    const trendHtml=d.length?`<div style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow);margin-bottom:14px">
+      <h4 style="margin:0 0 8px;color:var(--navy)">${nm} · ${MK_LABEL[s.mk]} 季趨勢</h4><canvas id="ztc" height="88"></canvas></div>`:"";
+    const totalN=bd.reduce((a,r)=>a+r[1],0);
+    const bdHtml=`<div style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px;box-shadow:var(--shadow)">
+      <h4 style="margin:0 0 4px;color:var(--navy)">${nm} · ${MK_LABEL[s.mk]} 成交量組成（可稽核）</h4>
+      <div style="font-size:12px;color:var(--sub);margin-bottom:8px">共 <b style="color:var(--navy)">${totalN.toLocaleString()}</b> 筆 = 以下 ${bd.length} 個建案（已排除政策宅/特殊交易）</div>
+      <table><thead><tr><th class="l">建案名</th><th>筆數</th><th>全期中位<br><small>萬/坪</small></th><th>近3年<br><small>中位</small></th><th class="l">成交期間</th></tr></thead>
+      <tbody>${bd.map(r=>`<tr><td class="l"><span class="pname">${r[0]}</span></td><td class="price">${r[1]}</td>
+        <td>${r[2]!=null?r[2]:'<span class="muted">—</span>'}</td><td class="price" style="color:var(--blue)">${r[3]!=null?r[3]:'<span class="muted">—</span>'}</td>
+        <td class="l"><span class="rng">${r[4]||''} ~ ${r[5]||''}</span></td></tr>`).join("")||empty(5)}</tbody></table></div>`;
+    box.innerHTML=trendHtml+bdHtml;
+    if(d.length){
+      if(ZTCHART)ZTCHART.destroy();
+      ZTCHART=new Chart(document.getElementById("ztc"),{data:{labels:d.map(x=>x.q),datasets:[
+        {type:"bar",label:"成交量(筆)",data:d.map(x=>x.n),yAxisID:"y",backgroundColor:"#cfe0ee",borderRadius:3,order:2},
+        {type:"line",label:"中位單價(萬/坪)",data:d.map(x=>x.med),yAxisID:"y1",borderColor:"#1a6fb0",borderWidth:2.5,pointRadius:2,tension:.25,order:1,spanGaps:true}
+      ]},options:{responsive:true,interaction:{mode:"index",intersect:false},
+        scales:{y:{position:"left",beginAtZero:true,grid:{color:"#f0f3f6"}},y1:{position:"right",grid:{drawOnChartArea:false}}},
+        plugins:{legend:{position:"top",labels:{boxWidth:14,font:{size:12}}}}}});
+    }
     box.scrollIntoView({behavior:"smooth",block:"nearest"});
   };
   LMAP=L.map('map',{scrollWheelZoom:true}).setView([24.97,121.24],11);
@@ -532,9 +543,10 @@ async function renderMap(){
     document.getElementById("cnt").textContent=`${cur}｜${entries.length} ${s.level==="zone"?"個重劃區":"區"}（顏色＝近3年中位）`;
     const rows=entries.slice().sort((a,b)=>pv(b[2])-pv(a[2]));
     document.getElementById("maplist").innerHTML=`<table><thead><tr>
-      <th class="l">${nameCol}</th><th>成交量</th><th>近3年<br><small>中位</small></th><th class="hidem">全期<br><small>中位</small></th><th>平均總價<br><small>萬</small></th>
+      <th class="l">${nameCol}</th><th>成交量${s.level==="zone"?'<br><small>點看組成</small>':''}</th><th>近3年<br><small>中位</small></th><th class="hidem">全期<br><small>中位</small></th><th>平均總價<br><small>萬</small></th>
       </tr></thead><tbody>${rows.map(([nm,ll,v])=>`<tr><td class="l"><span class="dist">${nm}</span></td>
-      <td>${v.n.toLocaleString()}</td><td class="price">${v.med3!=null?v.med3:'—'}</td><td class="hidem">${v.med}</td><td>${v.avgtot?v.avgtot.toLocaleString():'—'}</td></tr>`).join("")}</tbody></table>`;
+      <td>${s.level==="zone"?`<a class="zlink" data-zone="${nm}" style="color:var(--blue);cursor:pointer;text-decoration:underline;font-weight:700">${v.n.toLocaleString()}</a>`:v.n.toLocaleString()}</td><td class="price">${v.med3!=null?v.med3:'—'}</td><td class="hidem">${v.med}</td><td>${v.avgtot?v.avgtot.toLocaleString():'—'}</td></tr>`).join("")}</tbody></table>`;
+    document.querySelectorAll("#maplist .zlink").forEach(el=>el.onclick=()=>drawZoneTrend(el.dataset.zone));
   };
   fLv.addEventListener("change",()=>{setMk();draw();});
   fMk.addEventListener("change",draw);

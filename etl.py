@@ -379,6 +379,27 @@ zone_trends={"presale":zone_trend([x for x in presale if not x["term"]],clean=Tr
              "resale":zone_trend(RESALE_KEEP,clean=True)}
 dump("zone_trends.json", zone_trends)
 
+# 各重劃區「成交量由哪些建案組成」明細(供點擊稽核) [案名, 筆數, 中位單價, 近3年中位]
+def zone_breakdown(rows):
+    g=defaultdict(lambda: defaultdict(list))
+    for r in rows:
+        z=seg2zone.get(r.get("seg",""))
+        if not z or not clean_ok(r): continue
+        g[z][r.get("proj") or "（未對到建案名）"].append(r)
+    out={}
+    for z,projs in g.items():
+        lst=[]
+        for proj,rs in projs.items():
+            pr=[x["unit"] for x in rs if x["unit"] and x["unit"]>0]
+            p1=min([x["date"] for x in rs if x["date"]] or [""]); p2=max([x["date"] for x in rs if x["date"]] or [""])
+            lst.append([proj,len(rs),round(statistics.median(pr),1) if pr else None,med3(rs),p1[:7],p2[:7]])
+        lst.sort(key=lambda x:-x[1])
+        out[z]=lst
+    return out
+zone_breakdown_data={"presale":zone_breakdown([x for x in presale if not x["term"]]),
+                     "resale":zone_breakdown(RESALE_KEEP)}
+dump("zone_breakdown.json", zone_breakdown_data)
+
 # ================= meta =================
 seasons=sorted(set([r["season"] for r in presale]+[r["season"] for r in resale]+[r["season"] for r in land]))
 districts=sorted(set([r["d"] for r in presale]+[r["d"] for r in resale]+[r["d"] for r in land]))
