@@ -126,6 +126,31 @@ for (d,bt),lst in ga.items():
 resale_area.sort(key=lambda x:-x["cnt"])
 dump("resale_area.json", resale_area)
 
+# 中古：棟/社區聚合（門牌截到「號」= 同棟；只收 >=2 筆 = 有二次成交）
+import re as _re
+def bldg_key(addr):
+    if not addr: return None
+    m=_re.search("號", addr)
+    return addr[:m.end()] if m else addr
+gb=defaultdict(list)
+for r in resale:
+    bk=bldg_key(r["addr"])
+    if bk: gb[(r["d"],bk)].append(r)
+resale_bldg=[]
+for (d,bk),lst in gb.items():
+    if len(lst)<2: continue  # 只保留有二次成交的棟
+    pr=[x["unit"] for x in lst if x["unit"] and x["unit"]>0]
+    dates=[x["date"] for x in lst if x["date"]]
+    bt=Counter(x["bt"] for x in lst if x["bt"])
+    resale_bldg.append({"d":d,"b":bk,"cnt":len(lst),
+        "avg":round(statistics.mean(pr),1) if pr else None,"med":round(statistics.median(pr),1) if pr else None,
+        "lo":round(min(pr),1) if pr else None,"hi":round(max(pr),1) if pr else None,
+        "p1":min(dates) if dates else None,"p2":max(dates) if dates else None,
+        "bt":(bt.most_common(1)[0][0] if bt else "")})
+resale_bldg.sort(key=lambda x:-x["cnt"])
+dump("resale_bldg.json", resale_bldg)
+print(f"  中古棟聚合(>=2筆): {len(resale_bldg)} 棟")
+
 # ================= 土地：逐筆 + 區×分區統計 =================
 dump("land_tx.json", [[r["d"],r["addr"],r["date"],r["zone"],r["area"],r["unit"],r["total"]] for r in land])
 gl=defaultdict(list)
