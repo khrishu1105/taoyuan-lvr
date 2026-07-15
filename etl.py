@@ -116,16 +116,29 @@ for zp in sorted(glob.glob(os.path.join(RAW, "*.zip"))):
                     "unit":up_adj,"total":tw,"park":(r[23] or "").strip(),"note":note,
                     "resi":is_resi(use),"special":is_special(note),"_keys":keys})
 
-# 用預售地號字典把建案名反貼到中古（交屋後轉售/預售換約後成屋）
-resale_hit = Counter()
+# 用預售地號字典把建案名反貼到中古(標示該筆屬於哪個建案)
+named_cnt = Counter()
 for r in resale:
     proj = None
     for k in r["_keys"]:
         if k in presale_parcel: proj = presale_parcel[k]; break
     r["proj"] = proj
     del r["_keys"]
-    if proj: resale_hit[proj] += 1
-print(f"預售 {len(presale)} | 中古 {len(resale)} | 土地 {len(land)} | 中古對到建案名 {sum(resale_hit.values()):,} 筆/{len(resale_hit)} 建案")
+    if proj: named_cnt[proj] += 1
+
+# 真二次轉售判定：同一完整門牌(含樓/之X)在成屋檔出現>=2次，第2次起才算轉售。
+# (剛交屋建案的成屋紀錄多為建商成屋/交屋首購=第一手，不能算轉售)
+addr_groups = defaultdict(list)
+for r in resale:
+    if r["addr"]: addr_groups[(r["d"], r["addr"])].append(r)
+resale_hit = Counter()   # 建案 -> 真二次轉售筆數
+for (d, addr), lst in addr_groups.items():
+    extra = len(lst) - 1   # 第一次為一手，其餘為轉售
+    if extra <= 0: continue
+    projs = [x["proj"] for x in lst if x.get("proj")]
+    if projs:
+        resale_hit[Counter(projs).most_common(1)[0][0]] += extra
+print(f"預售 {len(presale)} | 中古 {len(resale)} | 土地 {len(land)} | 對到建案名 {sum(named_cnt.values()):,}筆/{len(named_cnt)}建案 | 真二次轉售 {sum(resale_hit.values()):,}筆/{len(resale_hit)}建案")
 
 # ================= SQLite =================
 if os.path.exists(DB): os.remove(DB)
@@ -185,7 +198,9 @@ for (d,bk),lst in gb.items():
     if len(lst)<2: continue
     dates=[x["date"] for x in lst if x["date"]]
     bt=Counter(x["bt"] for x in lst if x["bt"]); pj=Counter(x["proj"] for x in lst if x.get("proj"))
-    resale_bldg.append({"d":d,"b":bk,"cnt":len(lst),
+    # 真轉售=同一門牌出現>=2次的超出部分(第一次為一手)
+    ac=Counter(x["addr"] for x in lst if x["addr"]); resold=sum(c-1 for c in ac.values() if c>=2)
+    resale_bldg.append({"d":d,"b":bk,"cnt":len(lst),"resold":resold,
         "avg":round(statistics.mean(pr),1) if pr else None,"med":round(statistics.median(pr),1) if pr else None,
         "lo":round(min(pr),1) if pr else None,"hi":round(max(pr),1) if pr else None,
         "p1":min(dates) if dates else None,"p2":max(dates) if dates else None,
@@ -253,7 +268,8 @@ alldates=[d for d in (p_min,p_max,r_min,r_max,l_min,l_max) if d]
 meta={"seasons":seasons,"districts":districts,
     "presale_tx":len(presale),"presale_projects":len(pprojects),"presale_term":sum(r["term"] for r in presale),
     "resale_tx":len(RESALE_KEEP),"resale_tx_all":len(resale),"land_tx":len(land),
-    "resale_named":sum(1 for x in RESALE_KEEP if x.get("proj")),"resale_named_projects":len(resale_hit),
+    "resale_named":sum(1 for x in RESALE_KEEP if x.get("proj")),"resale_named_projects":len(named_cnt),
+    "resale_resold":sum(resale_hit.values()),
     "resale_bargains":len(bargains[:2000]),
     "presale_min":p_min,"presale_max":p_max,"resale_min":r_min,"resale_max":r_max,"land_min":l_min,"land_max":l_max,
     "date_min":min(alldates),"date_max":max(alldates)}
