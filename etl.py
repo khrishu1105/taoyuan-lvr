@@ -326,6 +326,26 @@ map_zones={"zones":{z:info["c"] for z,info in REDEV_ZONES.items()},
 dump("map_zones.json", map_zones)
 print(f"  重劃區地圖: {len(REDEV_ZONES)}區, 預售命中 {sum(v['n'] for v in map_zones['presale'].values()):,}筆")
 
+# ================= 趨勢：各季成交量 + 中位單價 =================
+def quarter(d):
+    if not d or d<"2000-01-01": return None
+    return f"{d[:4]}Q{(int(d[5:7])-1)//3+1}"
+def trend_agg(rows, clean=False):
+    g=defaultdict(list)
+    for r in rows:
+        if clean and not (r.get("resi") and not r.get("special")): continue
+        q=quarter(r["date"])
+        if q and int(q[:4])>=2018: g[q].append(r)
+    out=[]
+    for q in sorted(g):
+        lst=g[q]; pr=[x["unit"] for x in lst if x["unit"] and x["unit"]>0]
+        out.append({"q":q,"n":len(lst),"med":round(statistics.median(pr),1) if pr else None})
+    return out
+trends={"presale":trend_agg([x for x in presale if not x["term"]],clean=True),
+        "resale":trend_agg(RESALE_KEEP,clean=True),
+        "land":trend_agg(land)}
+dump("trends.json", trends)
+
 # ================= meta =================
 seasons=sorted(set([r["season"] for r in presale]+[r["season"] for r in resale]+[r["season"] for r in land]))
 districts=sorted(set([r["d"] for r in presale]+[r["d"] for r in resale]+[r["d"] for r in land]))
