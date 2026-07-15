@@ -32,6 +32,21 @@ def read_csv_from_zip(z, suffix):
     if not cands: return None
     return list(csv.reader(io.StringIO(z.read(cands[0]).decode("utf-8-sig"))))
 
+def adj_unit_price(total, car_price, barea, carea):
+    """去車位單價(萬/坪)=(總價-車位價)/(建物面積-車位面積)。避免車位灌入拉低單價。"""
+    if not total or not barea: return None
+    net_area = barea - (carea or 0)
+    net_price = total - (car_price or 0)
+    if net_area <= 0 or net_price <= 0: return None
+    return round(net_price / net_area * PING / 10000, 2)
+
+# 特殊交易/非市場行情關鍵字(備註)：這些會造成異常低價，需排除於行情統計與檢便宜
+SPECIAL_NOTE = ("親友","員工","共有人","特殊關係","關係人","含土地增值","增建","持分","權利範圍",
+    "債務","債權","瑕疵","分算","急買","急賣","畸零","毛胚","未辦保存","未登記","含裝潢","facilities",
+    "含車位交易總價","坪數含","二親等","公同共有","抵繳","拍賣","法拍","協議")
+def is_special(note): return any(k in (note or "") for k in SPECIAL_NOTE)
+def is_resi(use): return "住" in (use or "")   # 住家用/住商用/國民住宅=住宅；商業/辦公/工業/其他=非住宅
+
 presale, resale, land = [], [], []
 presale_parcel = {}   # (區,地段,地號) -> 建案名；用來把建案名反貼到中古(交屋後轉售)
 
@@ -46,16 +61,18 @@ for zp in sorted(glob.glob(os.path.join(RAW, "*.zip"))):
     if rr:
         for r in rr[2:]:
             if len(r) < 30: continue
-            u = num(r[22]); up = round(u*PING/10000,2) if u else None
             t = num(r[21])
+            up = adj_unit_price(t, num(r[25]), num(r[15]), num(r[24]))  # 去車位單價
+            use = (r[12] or "").strip()
             proj = (r[28] or "").strip() or "（未填建案名）"
             eid = (r[27] or "").strip() if len(r) > 27 else ""
             if eid and proj != "（未填建案名）": proj_by_eid[eid] = (proj, r[0].strip())
             presale.append({"season":season,"d":r[0].strip(),"proj":proj,
-                "addr":(r[2] or "").strip(),"date":roc_to_ad(r[7]),
+                "addr":(r[2] or "").strip(),"date":roc_to_ad(r[7]),"use":use,
                 "rm":int(num(r[16]) or 0),"hl":int(num(r[17]) or 0),"ba":int(num(r[18]) or 0),
                 "fl":(r[9] or "").strip(),"tf":(r[10] or "").strip(),"bt":(r[11] or "").strip(),
                 "unit":up,"total":round(t/10000) if t else None,"park":(r[23] or "").strip(),
+                "resi":is_resi(use),"special":is_special(r[26] or ""),
                 "term":1 if (len(r)>30 and (r[30] or "").strip()) else 0})
     bl = read_csv_from_zip(z, "h_lvr_land_b_land.csv")
     if bl:
@@ -90,11 +107,14 @@ for zp in sorted(glob.glob(os.path.join(RAW, "*.zip"))):
                 d = r[0].strip()
                 eid = (r[27] or "").strip()
                 keys = {(d, seg, no) for (seg, no) in aparc.get(eid, ())}
+                up_adj = adj_unit_price(t, num(r[25]), num(r[15]), num(r[24]))  # 去車位單價
+                use = (r[12] or "").strip(); note=(r[26] or "").strip()
                 resale.append({"season":season,"d":d,"addr":(r[2] or "").strip(),
                     "date":roc_to_ad(r[7]),"bt":(r[11] or "").strip(),"age":age if (age is not None and 0<=age<80) else None,
                     "rm":int(num(r[16]) or 0),"hl":int(num(r[17]) or 0),"ba":int(num(r[18]) or 0),
-                    "fl":(r[9] or "").strip(),"tf":(r[10] or "").strip(),
-                    "unit":up,"total":tw,"park":(r[23] or "").strip(),"note":(r[26] or "").strip(),"_keys":keys})
+                    "fl":(r[9] or "").strip(),"tf":(r[10] or "").strip(),"use":use,
+                    "unit":up_adj,"total":tw,"park":(r[23] or "").strip(),"note":note,
+                    "resi":is_resi(use),"special":is_special(note),"_keys":keys})
 
 # 用預售地號字典把建案名反貼到中古（交屋後轉售/預售換約後成屋）
 resale_hit = Counter()
@@ -129,9 +149,10 @@ for r in presale: g[(r["d"], r["proj"])].append(r)
 pprojects = []
 for (d, proj), lst in g.items():
     valid=[x for x in lst if not x["term"]]
-    priced=[x["unit"] for x in valid if x["unit"] and x["unit"]>0]
-    dates=[x["date"] for x in valid if x["date"]]; tots=[x["total"] for x in valid if x["total"]]
-    rc=Counter(x["rm"] for x in valid if x["rm"])
+    clean=[x for x in valid if x.get("resi") and not x.get("special")]  # 只用住宅、非特殊交易算行情
+    priced=[x["unit"] for x in clean if x["unit"] and x["unit"]>0]
+    dates=[x["date"] for x in valid if x["date"]]; tots=[x["total"] for x in clean if x["total"]]
+    rc=Counter(x["rm"] for x in clean if x["rm"])
     pprojects.append({"d":d,"n":proj,"cnt":len(lst),"valid":len(valid),"term":sum(x["term"] for x in lst),"resale":resale_hit.get(proj,0),
         "avg":round(statistics.mean(priced),1) if priced else None,"med":round(statistics.median(priced),1) if priced else None,
         "lo":round(min(priced),1) if priced else None,"hi":round(max(priced),1) if priced else None,
@@ -159,7 +180,7 @@ for r in RESALE_KEEP:
     if bk: gb[(r["d"],bk)].append(r)
 bldg_med={}; resale_bldg=[]
 for (d,bk),lst in gb.items():
-    pr=[x["unit"] for x in lst if x["unit"] and x["unit"]>0]
+    pr=[x["unit"] for x in lst if x["unit"] and x["unit"]>0 and x.get("resi") and not x.get("special")]
     if pr: bldg_med[(d,bk)]=statistics.median(pr)
     if len(lst)<2: continue
     dates=[x["date"] for x in lst if x["date"]]
@@ -177,7 +198,7 @@ ga=defaultdict(list)
 for r in RESALE_KEEP: ga[(r["d"],r["bt"])].append(r)
 area_med={}; resale_area=[]
 for (d,bt),lst in ga.items():
-    pr=[x["unit"] for x in lst if x["unit"] and x["unit"]>0]
+    pr=[x["unit"] for x in lst if x["unit"] and x["unit"]>0 and x.get("resi") and not x.get("special")]
     ages=[x["age"] for x in lst if x["age"] is not None]
     if pr: area_med[(d,bt)]=statistics.median(pr)
     resale_area.append({"d":d,"bt":bt,"cnt":len(lst),
@@ -194,19 +215,19 @@ def gap_of(r):
     base=bldg_med.get((r["d"],r.get("_bk"))) or area_med.get((r["d"],r["bt"]))
     if not base: return None
     return round((u-base)/base*100)
-dump("resale_tx.json", [[r["d"],r["addr"],r["date"],r["bt"],r["age"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"],r.get("proj") or "",gap_of(r)] for r in RESALE_KEEP])
-SPECIAL=("親","關係","債","員工","含增建","含裝潢","瑕疵","急","坪數含","facilities","特殊","分算","含未登記","毛胚","增建")
+# resale_tx: 加 gap(13)、用途(14)、住宅(15,1/0)、特殊交易(16,1/0)，供前端顯示與過濾
+dump("resale_tx.json", [[r["d"],r["addr"],r["date"],r["bt"],r["age"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"],r.get("proj") or "",gap_of(r),r.get("use",""),1 if r.get("resi") else 0,1 if r.get("special") else 0] for r in RESALE_KEEP])
+# 檢便宜：住宅、非特殊、有社區名、單價>=15、合理便宜區間(-35%~-8%)
 bargains=[]
 for r in RESALE_KEEP:
+    if not (r.get("resi") and not r.get("special") and r.get("proj") and r["unit"] and r["unit"]>=15): continue
     g=gap_of(r)
-    note=r.get("note","")
-    # 只收合理便宜區間(-35%~-8%)、有社區名、單價>=15萬/坪、非特殊交易(排除異常低價)
-    if g is not None and -35<=g<=-8 and r.get("proj") and r["unit"] and r["unit"]>=15 \
-       and not any(k in note for k in SPECIAL):
+    if g is not None and -35<=g<=-8:
         bargains.append([r["d"],r["addr"],r["date"],r.get("proj"),r["bt"],r["age"],r["unit"],r["total"],g])
 bargains.sort(key=lambda x:x[8])
 dump("resale_bargains.json", bargains[:2000])
-print(f"  中古精簡 {len(RESALE_KEEP):,}/{len(resale):,} | 棟聚合 {len(resale_bldg):,} | 檢便宜 {len(bargains):,}筆")
+resi_keep=sum(1 for r in RESALE_KEEP if r.get("resi") and not r.get("special"))
+print(f"  中古精簡 {len(RESALE_KEEP):,}/{len(resale):,} (住宅純淨{resi_keep:,}) | 棟聚合 {len(resale_bldg):,} | 檢便宜 {len(bargains):,}筆")
 
 # ================= 土地：逐筆 + 區×分區統計 =================
 dump("land_tx.json", [[r["d"],r["addr"],r["date"],r["zone"],r["area"],r["unit"],r["total"]] for r in land])
