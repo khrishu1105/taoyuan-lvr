@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """桃園實登統一 ETL：預售(_b) + 中古(_a建物) + 土地(_a土地) → SQLite + 前端 JSON。
 資料源：內政部不動產成交案件實際資訊供應系統（開放資料，每旬更新）。"""
-import zipfile, csv, io, os, json, sqlite3, statistics, glob, datetime
+import zipfile, csv, io, os, json, sqlite3, statistics, glob, datetime, re
 from collections import defaultdict, Counter
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -166,6 +166,42 @@ for r in resale:
     if proj: named_cnt[proj] += 1
 print(f"社區名對照表補上 {custom_cnt} 筆")
 
+# ===== 併入即時查詢網補抓的成屋(realtime/*.json，補批次落後當季的缺口) =====
+# 由 realtime_scraper/lookup.py 產出、放進 realtime/ 的乾淨記錄。用建案名(bn)直接帶 proj，
+# 比地號比對更準；去重(區,門牌,日期,總價)避免與批次重複。
+def _dist(a):
+    for c in "區鄉鎮":
+        j = a.find(c)
+        if 0 < j <= 4: return a[:j+1]
+    return ""
+def _lay(s, ch):
+    m = re.search(r"(\d+)"+ch, s or ""); return int(m.group(1)) if m else 0
+RT_DIR = os.path.join(BASE, "realtime")
+rt_add = 0
+if os.path.isdir(RT_DIR):
+    seen = {(r["d"], r["addr"], r["date"], r["total"]) for r in resale}
+    for fn in sorted(glob.glob(os.path.join(RT_DIR, "*.json"))):
+        for x in json.load(open(fn, encoding="utf-8")):
+            if not x.get("date") or not x.get("addr") or not x.get("proj"): continue
+            d = _dist(x["addr"])
+            addr = x["addr"] if x["addr"].startswith("桃園") else "桃園市"+x["addr"]
+            key = (d, addr, x["date"], x.get("total"))
+            if key in seen: continue
+            seen.add(key)
+            fp = (x.get("floor") or "").split("/")
+            resale.append({"season":"RT","d":d,"addr":addr,"date":x["date"],
+                "bt":x.get("bt",""),"age":None,"rm":_lay(x.get("rm_layout"),"房"),
+                "hl":_lay(x.get("rm_layout"),"廳"),"ba":_lay(x.get("rm_layout"),"衛"),
+                "fl":fp[0] if fp else "","tf":fp[1] if len(fp)>1 else "",
+                "use":x.get("use") or "住家用","seg":"","zone":"",
+                "unit":x.get("unit"),"total":x.get("total"),"park":"","note":x.get("note",""),
+                "resi":is_resi(x.get("use") or "住"),"special":bool(x.get("special")),
+                "deed":x.get("deed"),"pkarea":None,"pkprice":x.get("pkprice"),
+                "proj":x.get("proj"),"policy":False,"custom_name":0,
+                "src":"realtime","huan":x.get("kind")=="換約"})
+            rt_add += 1
+print(f"即時查詢網補入 {rt_add} 筆成屋")
+
 # ===== 車位價回推：中古常「車位面積有登、車位價沒登」，導致 adj_unit_price 只扣面積不扣價→單價灌高。
 # 用同社區(建案名)同車位類別的已登車位價中位數回推，再重算去車位單價。查表也納入預售(交屋前就有車位價)。=====
 park_pp=defaultdict(list); park_p=defaultdict(list); park_dp=defaultdict(list)  # (proj,類別)/(proj)/(區,類別)->車位價
@@ -205,7 +241,9 @@ resale_hit = Counter()   # 建案 -> 真二次轉售筆數
 for (d, addr), lst in addr_groups.items():
     lst.sort(key=lambda x: x["date"] or "")   # 依交易日排序，最早者為第一手
     for i, x in enumerate(lst):
-        if i == 0:
+        if x.get("huan"):
+            x["flag"] = "換約"   # 即時資料標記的預售換約(合約轉讓)
+        elif i == 0:
             # 第一手：若對得到建案名，視為「預售交屋回補」(成交價為當年預售價，非現行行情)
             x["flag"] = "交屋" if x.get("proj") else ""
         else:
@@ -320,7 +358,7 @@ def gap_of(r):
     if not base: return None
     return round((u-base)/base*100)
 # resale_tx: 加 gap(13)、用途(14)、住宅(15,1/0)、特殊交易(16,1/0)，供前端顯示與過濾
-dump("resale_tx.json", [[r["d"],r["addr"],r["date"],r["bt"],r["age"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"],r.get("proj") or "",gap_of(r),r.get("use",""),1 if r.get("resi") else 0,1 if r.get("special") else 0,r.get("zone",""),r.get("flag",""),r.get("deed"),r.get("pkarea"),r.get("pkprice"),r.get("pdate",""),r.get("punit"),r.get("ptotal"),r.get("car_est",0),r.get("custom_name",0)] for r in RESALE_KEEP])
+dump("resale_tx.json", [[r["d"],r["addr"],r["date"],r["bt"],r["age"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"],r.get("proj") or "",gap_of(r),r.get("use",""),1 if r.get("resi") else 0,1 if r.get("special") else 0,r.get("zone",""),r.get("flag",""),r.get("deed"),r.get("pkarea"),r.get("pkprice"),r.get("pdate",""),r.get("punit"),r.get("ptotal"),r.get("car_est",0),r.get("custom_name",0),1 if r.get("src")=="realtime" else 0] for r in RESALE_KEEP])
 # 檢便宜：住宅、非特殊、有社區名、單價>=15、合理便宜區間(-35%~-8%)
 bargains=[]
 for r in RESALE_KEEP:

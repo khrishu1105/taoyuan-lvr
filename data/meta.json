@@ -33,7 +33,8 @@
   "114S3",
   "114S4",
   "115S1",
-  "115S2"
+  "115S2",
+  "RT"
  ],
  "districts": [
   "",
@@ -54,11 +55,11 @@
  "presale_tx": 99569,
  "presale_projects": 1733,
  "presale_term": 323,
- "resale_tx": 218852,
- "resale_tx_all": 311989,
+ "resale_tx": 219005,
+ "resale_tx_all": 312142,
  "land_tx": 86227,
- "resale_named": 97476,
- "resale_named_projects": 987,
+ "resale_named": 97629,
+ "resale_named_projects": 982,
  "resale_resold": 6123,
  "resale_bargains": 2000,
  "recent_cut": "2023-05-30",
@@ -70,5 +71,5 @@
  "land_max": "2026-05-30",
  "date_min": "2002-07-01",
  "date_max": "2026-05-30",
- "updated_at": "2026-09-08 17:00"
+ "updated_at": "2026-09-08 22:07"
 }

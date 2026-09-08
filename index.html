@@ -115,6 +115,8 @@
   .zone{display:inline-block;font-size:10px;color:#8a6d3b;background:#f6efe0;border-radius:4px;padding:1px 6px;font-weight:600}
   sup.umk{font-size:8px;color:#c0392b;cursor:help;margin-left:1px}
   .badge-custom{background:#efe7fb;color:#7a4fb0;font-size:9px;border-radius:4px;padding:1px 5px;font-weight:600;margin-left:3px;cursor:help}
+  .badge-huan{background:#fff2d9;color:#a6771a;font-size:10px;border-radius:4px;padding:1px 6px;font-weight:600;white-space:nowrap}
+  .badge-rt{background:#e0f5f0;color:#0a8f77;font-size:9px;border-radius:4px;padding:1px 5px;font-weight:600;margin-left:3px}
   .loading{text-align:center;padding:60px 20px;color:var(--sub);font-size:14px}
   .pager{display:flex;gap:10px;align-items:center;justify-content:center;padding:18px;font-size:13px}
   .pager button{font:inherit;padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-weight:600;color:var(--navy)}
@@ -277,7 +279,7 @@ async function drillPresale(tr){
   const pre=PTX.filter(r=>r[0]===d&&r[1]===n).sort((a,b)=>(b[3]||"").localeCompare(a[3]||""));
   // 交屋後成屋成交（用建案名歸戶，跨門牌自動合併）
   const res=RTX.filter(r=>r[0]===d&&r[12]===n).sort((a,b)=>(b[2]||"").localeCompare(a[2]||""));
-  const hand=res.filter(r=>r[18]==="交屋"), resold=res.filter(r=>r[18]==="轉售");
+  const hand=res.filter(r=>r[18]==="交屋"), resold=res.filter(r=>r[18]==="轉售"), huan=res.filter(r=>r[18]==="換約");
   const avg=a=>{const v=a.filter(x=>x>0);return v.length?v.reduce((s,x)=>s+x,0)/v.length:null;};
   const pa=avg(pre.filter(r=>!r[12]).map(r=>r[9])), ha=avg(hand.map(r=>r[10])), ra=avg(resold.map(r=>r[10]));
   const A=v=>v!=null?v.toFixed(1)+" 萬/坪":"—";
@@ -294,17 +296,17 @@ async function drillPresale(tr){
   // 併成單一全案成交列表：預售+交屋+轉售依日期排，記號區分
   const all=[];
   pre.forEach(r=>all.push({date:r[3],addr:r[2],rm:r[4],hl:r[5],ba:r[6],deed:r[13],pka:r[14],pkp:r[15],unit:r[9],total:r[10],src:"預售",term:r[12],est:0}));
-  res.forEach(r=>all.push({date:r[2],addr:r[1],rm:r[5],hl:r[6],ba:r[7],deed:r[19],pka:r[20],pkp:r[21],unit:r[10],total:r[11],src:"成屋",flag:r[18],age:r[4],est:r[25],pd:r[22],pu:r[23],pt:r[24]}));
+  res.forEach(r=>all.push({date:r[2],addr:r[1],rm:r[5],hl:r[6],ba:r[7],deed:r[19],pka:r[20],pkp:r[21],unit:r[10],total:r[11],src:"成屋",flag:r[18],age:r[4],est:r[25],pd:r[22],pu:r[23],pt:r[24],rt:r[27]}));
   all.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
   const uniRow=x=>{
     const isHand=x.src==="成屋"&&x.flag==="交屋";
-    const badge=x.src==="預售"?(x.term?'<span class="badge-term">預售·解約</span>':'<span class="badge-pre">預售簽約</span>'):flagBadge(x.flag)||'<span class="muted">成屋</span>';
+    const badge=(x.src==="預售"?(x.term?'<span class="badge-term">預售·解約</span>':'<span class="badge-pre">預售簽約</span>'):flagBadge(x.flag)||'<span class="muted">成屋</span>')+(x.rt?'<span class="badge-rt" title="來自即時查詢網，批次尚未收錄">即時</span>':'');
     let extra="";
     if(x.flag==="轉售"&&x.pu){const cu=(x.unit-x.pu)/x.pu*100, ct=x.pt?(x.total-x.pt)/x.pt*100:null;
       extra=`<span style="color:${col(cu)}">單價${cu>0?'+':''}${cu.toFixed(1)}%</span>`+(ct!=null?` · <span style="color:${col(ct)}">總價${ct>0?'+':''}${ct.toFixed(1)}%</span> <small style="color:#999">前手${x.pd}</small>`:'');}
     return `<tr${isHand?' class="handrow"':''}><td>${badge}</td><td>${x.date||''}</td><td class="l">${shortAddr(d,x.addr)}</td><td>${x.age!=null?x.age+'年':'<span class="muted">—</span>'}</td><td>${x.rm}房${x.hl}廳${x.ba}衛</td><td>${x.deed!=null?x.deed.toFixed(1):'—'}</td><td>${carCell(x.pka,x.pkp,x.est)}</td><td style="text-align:right">${unitCell(x.unit,x.est)}</td><td style="text-align:right">${x.total!=null?x.total.toLocaleString():'—'}</td><td class="l">${extra}</td></tr>`;};
   const note=noResale?'<p style="color:#888;margin:4px 0">單機精簡版不含成屋資料，交屋後成交請用完整站查詢。</p>':'';
-  const table=`<h4>全案歷次登錄<small style="font-weight:400;color:#999">預售簽約 ${pre.length}．交屋過戶 ${hand.length}．中古轉售 ${resold.length}</small></h4>
+  const table=`<h4>全案歷次登錄 <small style="font-weight:400;color:#999">預售簽約 ${pre.length}．交屋過戶 ${hand.length}${huan.length?"．換約 "+huan.length:""}．中古轉售 ${resold.length}${res.some(r=>r[27])?"　<span style='color:#0a8f77'>含即時資料</span>":""}</small></h4>
     ${hand.length?`<label class="handtoggle"><input type="checkbox" onchange="this.closest('.dwrap').classList.toggle('showhand',this.checked)">顯示交屋過戶 ${hand.length} 筆（與預售簽約為同批戶，預設隱藏避免重複）</label>`:''}
     <table class="tx"><thead><tr><th>記號</th><th>成交日</th><th class="l">門牌</th><th>屋齡</th><th>格局</th><th>權狀坪</th><th>車位坪/價</th><th style="text-align:right">單價萬/坪</th><th style="text-align:right">總價萬</th><th class="l">轉售對前手</th></tr></thead><tbody>${all.map(uniRow).join("")}</tbody></table>`;
   det.querySelector(".dwrap").innerHTML=stat+note+table;
@@ -387,7 +389,8 @@ async function renderResale(){
 }
 function projName(name,custom){return name?`<span class="pname">${name}</span>${custom?'<span class="badge-custom" title="貝多自建社區名（內政部開放資料無此名，人工對照）">自訂</span>':''}`:'<span class="muted">—</span>';}
 function flagBadge(f){return f==='交屋'?'<span class="badge-move" title="建商→原預售買方過戶，成交價為當年預售價，與預售簽約多為同一批戶">交屋過戶</span>'
-  :f==='轉售'?'<span class="badge-resale" title="同一門牌第2次起成交，真正的中古市場轉售">中古轉售</span>':'';}
+  :f==='轉售'?'<span class="badge-resale" title="同一門牌第2次起成交，真正的中古市場轉售">中古轉售</span>'
+  :f==='換約'?'<span class="badge-huan" title="預售合約轉讓(換約)，來自即時查詢網">換約</span>':'';}
 // 車位格：area=車位坪 price=車位價萬 est(0實登/1回推/2無法回推含車位)
 function carCell(area,price,est){
   if(area==null) return '<span class="muted">無</span>';
@@ -406,7 +409,7 @@ function rRow(r){
   const attr = resale ? ` class="rprow" data-cd="${r[2]}" data-cu="${r[10]??''}" data-ct="${r[11]??''}" data-pd="${r[22]}" data-pu="${r[23]??''}" data-pt="${r[24]??''}"` : '';
   const pk = carCell(r[20],r[21],r[25]);
   return `<tr${attr}>
-  <td class="l">${projName(r[12],r[26])} ${flagBadge(r[18])}</td>
+  <td class="l">${projName(r[12],r[26])} ${flagBadge(r[18])}${r[27]?'<span class="badge-rt" title="來自即時查詢網(每旬更新)，批次尚未收錄">即時</span>':''}</td>
   <td class="l"><span class="dist">${r[0]}</span>${shortAddr(r[0],r[1])}</td>
   <td class="hidem">${r[3]||''}</td>
   <td class="hidem">${r[14]||''}${r[17]?` <span class="zone">${r[17]}</span>`:''}${r[16]===1?' <span class="badge-term">特殊</span>':''}</td>
