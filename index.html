@@ -87,6 +87,12 @@
   tbody tr.prow{cursor:pointer}
   tbody tr.rprow{cursor:pointer}
   tbody tr.rprow:hover{background:#f0f6ff}
+  .pjstat{display:flex;gap:12px;flex-wrap:wrap;margin:2px 0 16px}
+  .pjc{background:#fff;border:1px solid var(--line);border-radius:8px;padding:8px 16px;min-width:120px}
+  .pjc span{display:block;font-size:11px;color:var(--sub)}
+  .pjc b{font-size:21px;color:var(--navy)}
+  .pjc small{display:block;font-size:11px;color:var(--sub);margin-top:2px}
+  .dwrap h4{margin:14px 0 6px}
   tbody tr:hover{background:#f7fafc}
   .pname{font-weight:700;color:var(--navy)}
   .dist{display:inline-block;font-size:10.5px;color:var(--blue);background:var(--blue-l);border-radius:5px;padding:1.5px 7px;margin-right:6px;font-weight:600}
@@ -253,14 +259,37 @@ function pRow(p){return `<tr class="prow" data-k="${encodeURIComponent(p.d+"|"+p
 async function drillPresale(tr){
   const nx=tr.nextElementSibling; if(nx&&nx.classList.contains("detail")){nx.remove();return;}
   const [d,n]=decodeURIComponent(tr.dataset.k).split("|");
-  const TX=await load("presale_tx");
-  const rows=TX.filter(r=>r[0]===d&&r[1]===n).sort((a,b)=>(b[3]||"").localeCompare(a[3]||""));
-  const body=rows.map(r=>`<tr><td>${r[3]||''}</td><td style="text-align:left">${r[2]||''}</td>
-    <td>${r[4]}房${r[5]}廳${r[6]}衛</td><td>${r[7]||''}/${r[8]||''}</td>
-    <td style="text-align:right">${r[9]!=null?r[9].toFixed(1):'—'}</td><td style="text-align:right">${r[10]!=null?r[10].toLocaleString():'—'}</td>
-    <td>${r[11]||''} ${r[12]?'<span class="badge-term">解約</span>':''}</td></tr>`).join("");
-  insertDetail(tr,9,`逐筆成交（${rows.length} 筆）`,
-    `<thead><tr><th>交易日</th><th style="text-align:left">門牌</th><th>格局</th><th>樓/總</th><th style="text-align:right">單價萬/坪</th><th style="text-align:right">總價萬</th><th>車位/狀態</th></tr></thead><tbody>${body}</tbody>`);
+  const det=document.createElement("tr");det.className="detail";
+  det.innerHTML=`<td colspan="10"><div class="dwrap"><p style="color:#888">載入全案成交中…</p></div></td>`;tr.after(det);
+  const noResale=EMBED&&!EMBED.resale_tx;   // 單機精簡版無成屋資料
+  const [PTX,RTX]=await Promise.all([load("presale_tx"),noResale?Promise.resolve([]):load("resale_tx")]);
+  // 預售期成交（同建案名，含跨門牌）
+  const pre=PTX.filter(r=>r[0]===d&&r[1]===n).sort((a,b)=>(b[3]||"").localeCompare(a[3]||""));
+  // 交屋後成屋成交（用建案名歸戶，跨門牌自動合併）
+  const res=RTX.filter(r=>r[0]===d&&r[12]===n).sort((a,b)=>(b[2]||"").localeCompare(a[2]||""));
+  const hand=res.filter(r=>r[18]==="交屋"), resold=res.filter(r=>r[18]==="轉售");
+  const avg=a=>{const v=a.filter(x=>x>0);return v.length?v.reduce((s,x)=>s+x,0)/v.length:null;};
+  const pa=avg(pre.filter(r=>!r[12]).map(r=>r[9])), ha=avg(hand.map(r=>r[10])), ra=avg(resold.map(r=>r[10]));
+  const A=v=>v!=null?v.toFixed(1)+" 萬/坪":"—";
+  const grow=(pa!=null&&ra!=null)?(ra-pa)/pa*100:null;
+  const nAddr=new Set(res.map(r=>r[1]).concat(pre.map(r=>r[2])).filter(Boolean)).size;
+  const stat=`<div class="pjstat">
+    <div class="pjc"><span>預售期成交</span><b>${pre.length}</b> 筆<small>${pa!=null?"均 "+A(pa):"—"}</small></div>
+    <div class="pjc"><span>交屋回補(第一手)</span><b>${hand.length}</b> 筆<small>${ha!=null?"均 "+A(ha):"—"}</small></div>
+    <div class="pjc"><span>中古轉售</span><b style="color:var(--resale)">${resold.length}</b> 筆<small>${ra!=null?"均 "+A(ra):"—"}</small></div>
+    ${grow!=null?`<div class="pjc"><span>預售價→轉售均價</span><b style="color:${grow>0?'#c0392b':'#1a8a4f'}">${grow>0?'+':''}${grow.toFixed(0)}%</b><small>${A(pa)} → ${A(ra)}</small></div>`:''}
+    <div class="pjc"><span>涵蓋門牌</span><b>${nAddr}</b> 個<small>同社區已合併</small></div>
+  </div>`;
+  const preTable=pre.length?`<h4>預售期成交（${pre.length} 筆）</h4>
+    <table class="tx"><thead><tr><th>成交日</th><th class="l">門牌</th><th>格局</th><th>權狀坪</th><th>車位坪/萬</th><th style="text-align:right">單價萬/坪</th><th style="text-align:right">總價萬</th><th>狀態</th></tr></thead><tbody>${pre.map(r=>`<tr><td>${r[3]||''}</td><td class="l">${shortAddr(r[0],r[2])}</td><td>${r[4]}房${r[5]}廳${r[6]}衛</td><td>${r[13]!=null?r[13].toFixed(1):'—'}</td><td>${r[15]!=null?(r[14]!=null?r[14].toFixed(1):'—')+'/'+r[15].toLocaleString():'無'}</td><td style="text-align:right">${r[9]!=null?r[9].toFixed(1):'—'}</td><td style="text-align:right">${r[10]!=null?r[10].toLocaleString():'—'}</td><td>${r[12]?'<span class="badge-term">解約</span>':''}</td></tr>`).join("")}</tbody></table>`:'';
+  const resRow=r=>{let extra='';
+    if(r[18]==="轉售"&&r[23]){const c=(r[10]-r[23])/r[23]*100;extra=`<span style="color:${c>0?'#c0392b':c<0?'#1a8a4f':'#888'}">前手 ${r[22]} ${r[23]}→${r[10]}（${c>0?'+':''}${c.toFixed(1)}%）</span>`;}
+    return `<tr><td>${flagBadge(r[18])||'<span class="muted">—</span>'}</td><td>${r[2]||''}</td><td class="l">${shortAddr(r[0],r[1])}</td><td>${r[4]!=null?r[4]+'年':'—'}</td><td>${r[5]}房${r[6]}廳${r[7]}衛</td><td>${r[19]!=null?r[19].toFixed(1):'—'}</td><td>${r[21]!=null?(r[20]!=null?r[20].toFixed(1):'—')+'/'+r[21].toLocaleString():'無'}</td><td style="text-align:right">${r[10]!=null?r[10].toFixed(1):'—'}</td><td style="text-align:right">${r[11]!=null?r[11].toLocaleString():'—'}</td><td class="l">${extra}</td></tr>`;};
+  const resTable=noResale?'<p style="color:#888;margin:8px 0">單機精簡版不含成屋資料，交屋後成交請用完整站查詢。</p>'
+    :res.length?`<h4>交屋後成屋成交（${res.length} 筆：交屋 ${hand.length}．轉售 ${resold.length}）</h4>
+    <table class="tx"><thead><tr><th>記號</th><th>成交日</th><th class="l">門牌</th><th>屋齡</th><th>格局</th><th>權狀坪</th><th>車位坪/萬</th><th style="text-align:right">單價萬/坪</th><th style="text-align:right">總價萬</th><th class="l">轉售對前手漲跌</th></tr></thead><tbody>${res.map(resRow).join("")}</tbody></table>`
+    :'<p style="color:#888;margin:8px 0">此案尚無成屋(交屋後)成交紀錄——多為近期預售、尚未交屋。</p>';
+  det.querySelector(".dwrap").innerHTML=stat+preTable+resTable;
 }
 
 /* ================= 中古/成屋（逐筆分頁 + 區×型態統計） ================= */
