@@ -95,6 +95,11 @@
   .dwrap h4{margin:14px 0 6px}
   .dwrap .handrow{display:none}
   .dwrap.showhand .handrow{display:table-row}
+  .bldgview .handrow{display:none}
+  .bldgview.showhand .handrow{display:table-row}
+  .bldgview h2{font-size:20px;margin:8px 0 14px}
+  .backbtn{background:var(--blue-l);color:var(--blue);border:none;border-radius:6px;padding:7px 14px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:6px}
+  .backbtn:hover{background:var(--blue);color:#fff}
   .handtoggle{display:inline-block;font-size:12px;color:var(--sub);margin:0 0 8px;cursor:pointer}
   .handtoggle input{vertical-align:-1px;margin-right:4px}
   tbody tr:hover{background:#f7fafc}
@@ -251,7 +256,7 @@ async function renderPresale(){
       <th class="l">建案 / 行政區</th><th data-sk="valid">有效/總</th><th class="hidem">解約</th><th data-sk="avg">全期<br><small>均價</small></th>
       <th data-sk="med3">近3年<br><small>中位</small></th><th class="hidem">單價區間</th><th data-sk="avgtot">均總價<br><small>萬</small></th><th class="hidem">主力房</th><th>中古<br><small>轉售</small></th><th class="l" data-sk="p2">登錄期間</th>
       </tr></thead><tbody>${list.slice(0,400).map(pRow).join("")||empty(10)}</tbody></table>`;
-    document.querySelectorAll("tr.prow").forEach(tr=>tr.addEventListener("click",()=>drillPresale(tr)));
+    document.querySelectorAll("tr.prow").forEach(tr=>tr.addEventListener("click",()=>{const [d,n]=decodeURIComponent(tr.dataset.k).split("|");showBuilding(d,n);}));
     wireSort("fS");
   };
   ["fD","fQ","fMin","fTerm","fS"].forEach(id=>document.getElementById(id).addEventListener("input",draw));
@@ -268,11 +273,11 @@ function pRow(p){return `<tr class="prow" data-k="${encodeURIComponent(p.d+"|"+p
   <td class="hidem">${p.room?p.room+'房':'<span class="muted">—</span>'}</td>
   <td>${p.resale?`<span class="term" style="color:var(--resale)">${p.resale}</span>`:'<span class="muted">0</span>'}</td>
   <td class="l"><span class="rng">${p.p1||''} ~ ${p.p2||''}</span></td></tr>`;}
-async function drillPresale(tr){
-  const nx=tr.nextElementSibling; if(nx&&nx.classList.contains("detail")){nx.remove();return;}
-  const [d,n]=decodeURIComponent(tr.dataset.k).split("|");
-  const det=document.createElement("tr");det.className="detail";
-  det.innerHTML=`<td colspan="10"><div class="dwrap"><p style="color:#888">載入全案成交中…</p></div></td>`;tr.after(det);
+async function showBuilding(d,n){
+  window.scrollTo(0,0);
+  document.getElementById("stats").innerHTML="";
+  document.getElementById("filters").innerHTML="";
+  document.getElementById("tablewrap").innerHTML=`<div class="bldgview" id="bview"><button class="backbtn" onclick="renderPresale()">← 返回建案列表</button><h2><span class="dist">${d}</span>${n}</h2><p style="color:#888">載入全案成交中…</p></div>`;
   const noResale=EMBED&&!EMBED.resale_tx;   // 單機精簡版無成屋資料
   const [PTX,RTX]=await Promise.all([load("presale_tx"),noResale?Promise.resolve([]):load("resale_tx")]);
   // 預售期成交（同建案名，含跨門牌）
@@ -307,9 +312,9 @@ async function drillPresale(tr){
     return `<tr${isHand?' class="handrow"':''}><td>${badge}</td><td>${x.date||''}</td><td class="l">${shortAddr(d,x.addr)}</td><td>${x.age!=null?x.age+'年':'<span class="muted">—</span>'}</td><td>${x.rm}房${x.hl}廳${x.ba}衛</td><td>${x.deed!=null?x.deed.toFixed(1):'—'}</td><td>${carCell(x.pka,x.pkp,x.est)}</td><td style="text-align:right">${unitCell(x.unit,x.est)}</td><td style="text-align:right">${x.total!=null?x.total.toLocaleString():'—'}</td><td class="l">${extra}</td></tr>`;};
   const note=noResale?'<p style="color:#888;margin:4px 0">單機精簡版不含成屋資料，交屋後成交請用完整站查詢。</p>':'';
   const table=`<h4>全案歷次登錄 <small style="font-weight:400;color:#999">預售簽約 ${pre.length}．交屋過戶 ${hand.length}${huan.length?"．換約 "+huan.length:""}．中古轉售 ${resold.length}${res.some(r=>r[27])?"　<span style='color:#0a8f77'>含即時資料</span>":""}</small></h4>
-    ${hand.length?`<label class="handtoggle"><input type="checkbox" onchange="this.closest('.dwrap').classList.toggle('showhand',this.checked)">顯示交屋過戶 ${hand.length} 筆（與預售簽約為同批戶，預設隱藏避免重複）</label>`:''}
+    ${hand.length?`<label class="handtoggle"><input type="checkbox" onchange="document.getElementById('bview').classList.toggle('showhand',this.checked)">顯示交屋過戶 ${hand.length} 筆（與預售簽約為同批戶，預設隱藏避免重複）</label>`:''}
     <table class="tx"><thead><tr><th>記號</th><th>成交日</th><th class="l">門牌</th><th>屋齡</th><th>格局</th><th>權狀坪</th><th>車位坪/價</th><th style="text-align:right">單價萬/坪</th><th style="text-align:right">總價萬</th><th class="l">轉售對前手</th></tr></thead><tbody>${all.map(uniRow).join("")}</tbody></table>`;
-  det.querySelector(".dwrap").innerHTML=stat+note+table;
+  document.getElementById("bview").innerHTML=`<button class="backbtn" onclick="renderPresale()">← 返回建案列表</button><h2><span class="dist">${d}</span>${n}</h2>`+stat+note+table;
 }
 
 /* ================= 中古/成屋（逐筆分頁 + 區×型態統計） ================= */
