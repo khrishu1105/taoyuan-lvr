@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """桃園實登統一 ETL：預售(_b) + 中古(_a建物) + 土地(_a土地) → SQLite + 前端 JSON。
 資料源：內政部不動產成交案件實際資訊供應系統（開放資料，每旬更新）。"""
-import zipfile, csv, io, os, json, sqlite3, statistics, glob
+import zipfile, csv, io, os, json, sqlite3, statistics, glob, datetime
 from collections import defaultdict, Counter
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -440,7 +440,8 @@ meta={"seasons":seasons,"districts":districts,
     "resale_resold":sum(resale_hit.values()),
     "resale_bargains":len(bargains[:2000]),"recent_cut":RECENT_CUT,
     "presale_min":p_min,"presale_max":p_max,"resale_min":r_min,"resale_max":r_max,"land_min":l_min,"land_max":l_max,
-    "date_min":min(alldates),"date_max":max(alldates)}
+    "date_min":min(alldates),"date_max":max(alldates),
+    "updated_at":datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}
 json.dump(meta,open(os.path.join(DATADIR,"meta.json"),"w",encoding="utf-8"),ensure_ascii=False,indent=1)
 con.close()
 

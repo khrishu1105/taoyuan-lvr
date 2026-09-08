@@ -57,7 +57,23 @@ def main():
     subprocess.run([sys.executable, os.path.join(BASE, "etl.py")], check=True)
     log("重產單機版 (build_standalone.py)…")
     subprocess.run([sys.executable, os.path.join(BASE, "build_standalone.py")], check=True)
+    git_push()
     log("=== 更新完成 ===\n")
+
+def git_push():
+    """更新完自動推上 GitHub Pages；無變更則略過，git 失敗不影響更新本身。"""
+    try:
+        st = subprocess.run(["git","-C",BASE,"status","--porcelain"],
+                            capture_output=True, text=True)
+        if not st.stdout.strip():
+            log("Git: 無變更，略過推送"); return
+        stamp = datetime.datetime.now().strftime("%Y-%m-%d")
+        subprocess.run(["git","-C",BASE,"add","-A"], check=True)
+        subprocess.run(["git","-C",BASE,"commit","-m",f"自動更新資料 {stamp}"], check=True)
+        subprocess.run(["git","-C",BASE,"push","origin","main"], check=True)
+        log("Git: 已推送到 GitHub Pages")
+    except Exception as e:
+        log(f"Git: 推送失敗(不影響本機更新) {e}")
 
 if __name__ == "__main__":
     main()
