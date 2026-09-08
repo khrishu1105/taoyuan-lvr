@@ -106,7 +106,7 @@
   table.tx td{padding:6px 10px;font-size:12px}
   .badge-term{background:#fbe4de;color:var(--warn);font-size:10px;border-radius:4px;padding:1px 6px;font-weight:600}
   .badge-pre{background:#e7eefb;color:#2f5fb0;font-size:10px;border-radius:4px;padding:1px 6px;font-weight:600;white-space:nowrap}
-  .badge-move{background:#eef2f7;color:#5b6b7f;font-size:10px;border-radius:4px;padding:1px 6px;font-weight:600;white-space:nowrap}
+  .badge-move{background:#eef3fb;color:#3f6bb0;font-size:10px;border-radius:4px;padding:1px 6px;font-weight:600;white-space:nowrap}
   .badge-resale{background:#e3f3ea;color:#1a8a4f;font-size:10px;border-radius:4px;padding:1px 6px;font-weight:600;white-space:nowrap}
   .zone{display:inline-block;font-size:10px;color:#8a6d3b;background:#f6efe0;border-radius:4px;padding:1px 6px;font-weight:600}
   sup.umk{font-size:8px;color:#c0392b;cursor:help;margin-left:1px}
@@ -214,6 +214,9 @@ function switchTab(t){
 }
 
 function distOptions(){return `<option value="">全部</option>`+META.districts.map(d=>`<option>${d}</option>`).join("");}
+// 容錯搜尋：忽略空格/標點/全半形，讓「美術 水公園」「美術·水公園」都比對得到
+function norm(s){return (s||"").replace(/[\s·．・\-－_／/（）()，,、।]/g,"").toLowerCase();}
+function matchQ(q,...fields){const nq=norm(q); return !nq||fields.some(f=>norm(f).includes(nq));}
 function fmt(v,dp=1){return v==null?'<span class="muted">—</span>':Number(v).toLocaleString(undefined,{minimumFractionDigits:dp,maximumFractionDigits:dp});}
 function statCards(cards){document.getElementById("stats").innerHTML=cards.map(c=>`<div class="stat"><div class="k">${c[0]}</div><div class="v">${c[1]} <small>${c[2]||''}</small></div></div>`).join("");}
 function shortAddr(d,a){a=a||"";const p="桃園市"+d;return a.startsWith(p)?a.slice(p.length):a.replace("桃園市","");}
@@ -234,7 +237,7 @@ async function renderPresale(){
     <span class="count" id="cnt"></span>`;
   const draw=()=>{
     const d=fD.value,q=fQ.value.trim(),mn=+fMin.value||0,ot=fTerm.checked,sk=fS.value;
-    let list=P.filter(p=>(!d||p.d===d)&&(!mn||p.valid>=mn)&&(!ot||p.term)&&(!q||(p.n+p.d).includes(q)));
+    let list=P.filter(p=>(!d||p.d===d)&&(!mn||p.valid>=mn)&&(!ot||p.term)&&matchQ(q,p.n,p.d));
     list.sort((a,b)=>{let x=a[sk],y=b[sk];if(sk==="p2")return (y||"").localeCompare(x||"");return (y??-1)-(x??-1);});
     cnt.textContent=`符合 ${list.length} 案 / 共 ${P.length}`;
     document.getElementById("tablewrap").innerHTML=`<table><thead><tr>
@@ -276,8 +279,9 @@ async function drillPresale(tr){
   const grow=(pa!=null&&ra!=null)?(ra-pa)/pa*100:null;
   const nAddr=new Set(res.map(r=>r[1]).concat(pre.map(r=>r[2])).filter(Boolean)).size;
   const stat=`<div class="pjstat">
-    <div class="pjc"><span>預售期成交</span><b>${pre.length}</b> 筆<small>${pa!=null?"均 "+A(pa):"—"}</small></div>
-    <div class="pjc"><span>交屋回補(第一手)</span><b>${hand.length}</b> 筆<small>${ha!=null?"均 "+A(ha):"—"}</small></div>
+    <div class="pjc"><span>預售簽約</span><b>${pre.length}</b> 筆<small>${pa!=null?"均 "+A(pa):"—"}</small></div>
+    <div class="pjc"><span>交屋過戶</span><b>${hand.length}</b> 筆<small>${ha!=null?"均 "+A(ha):"—"}</small></div>
+    <div class="pjc" title="預售簽約＋交屋過戶多為同一批戶的兩次登記，故第一手戶數應以此為準，非兩者相加"><span>第一手小計</span><b style="color:var(--blue)">${pre.length+hand.length}</b> 筆<small>簽約＋過戶(同批戶)</small></div>
     <div class="pjc"><span>中古轉售</span><b style="color:var(--resale)">${resold.length}</b> 筆<small>${ra!=null?"均 "+A(ra):"—"}</small></div>
     ${grow!=null?`<div class="pjc"><span>預售價→轉售均價</span><b style="color:${grow>0?'#c0392b':'#1a8a4f'}">${grow>0?'+':''}${grow.toFixed(0)}%</b><small>${A(pa)} → ${A(ra)}</small></div>`:''}
     <div class="pjc"><span>涵蓋門牌</span><b>${nAddr}</b> 個<small>同社區已合併</small></div>
@@ -289,13 +293,13 @@ async function drillPresale(tr){
   res.forEach(r=>all.push({date:r[2],addr:r[1],rm:r[5],hl:r[6],ba:r[7],deed:r[19],pka:r[20],pkp:r[21],unit:r[10],total:r[11],src:"成屋",flag:r[18],age:r[4],est:r[25],pd:r[22],pu:r[23],pt:r[24]}));
   all.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
   const uniRow=x=>{
-    const badge=x.src==="預售"?(x.term?'<span class="badge-term">預售·解約</span>':'<span class="badge-pre">預售</span>'):flagBadge(x.flag)||'<span class="muted">成屋</span>';
+    const badge=x.src==="預售"?(x.term?'<span class="badge-term">預售·解約</span>':'<span class="badge-pre">預售簽約</span>'):flagBadge(x.flag)||'<span class="muted">成屋</span>';
     let extra="";
     if(x.flag==="轉售"&&x.pu){const cu=(x.unit-x.pu)/x.pu*100, ct=x.pt?(x.total-x.pt)/x.pt*100:null;
       extra=`<span style="color:${col(cu)}">單價${cu>0?'+':''}${cu.toFixed(1)}%</span>`+(ct!=null?` · <span style="color:${col(ct)}">總價${ct>0?'+':''}${ct.toFixed(1)}%</span> <small style="color:#999">前手${x.pd}</small>`:'');}
     return `<tr><td>${badge}</td><td>${x.date||''}</td><td class="l">${shortAddr(d,x.addr)}</td><td>${x.age!=null?x.age+'年':'<span class="muted">—</span>'}</td><td>${x.rm}房${x.hl}廳${x.ba}衛</td><td>${x.deed!=null?x.deed.toFixed(1):'—'}</td><td>${carCell(x.pka,x.pkp,x.est)}</td><td style="text-align:right">${unitCell(x.unit,x.est)}</td><td style="text-align:right">${x.total!=null?x.total.toLocaleString():'—'}</td><td class="l">${extra}</td></tr>`;};
   const note=noResale?'<p style="color:#888;margin:4px 0">單機精簡版不含成屋資料，交屋後成交請用完整站查詢。</p>':'';
-  const table=`<h4>全案歷次成交（${all.length} 筆，最新在上；預售→交屋→轉售同列時間軸）</h4>
+  const table=`<h4>全案歷次登錄（${all.length} 筆，最新在上）<small style="font-weight:400;color:#999">· 預售簽約與交屋過戶多為同批戶的兩次登記，非重複成交；真正的二次轉手看「中古轉售」</small></h4>
     <table class="tx"><thead><tr><th>記號</th><th>成交日</th><th class="l">門牌</th><th>屋齡</th><th>格局</th><th>權狀坪</th><th>車位坪/價</th><th style="text-align:right">單價萬/坪</th><th style="text-align:right">總價萬</th><th class="l">轉售對前手</th></tr></thead><tbody>${all.map(uniRow).join("")}</tbody></table>`;
   det.querySelector(".dwrap").innerHTML=stat+note+table;
 }
@@ -357,13 +361,13 @@ async function renderResale(){
     ["wB","wAge","wFlag","wResi","wSpec"].forEach(id=>document.getElementById(id).style.display=s.mode==="bldg"?"none":"");
     const d=fD.value,q=fQ.value.trim(),sk=fS.value;
     if(s.mode==="bldg"){
-      let list=BLDG.filter(r=>(!d||r.d===d)&&(!q||(r.b||"").includes(q)||(r.proj||"").includes(q)));
+      let list=BLDG.filter(r=>(!d||r.d===d)&&matchQ(q,r.b,r.proj));
       list.sort((a,b)=>{if(sk==="p2")return (b.p2||"").localeCompare(a.p2||"");return (b[sk]??-1)-(a[sk]??-1);});
       s.list=list; cnt.textContent=`符合 ${list.length.toLocaleString()} 棟（皆 2 筆以上成交）`;
     }else{
       const b=fB.value,ag=+fAge.value||0,fl=fFlag.value,resi=fResi.checked,spec=fSpec.checked;
       const flOK=r=>!fl||(fl==="一般"?(r[18]||"")==="":r[18]===fl);
-      let list=TX.filter(r=>(!d||r[0]===d)&&(!b||r[3]===b)&&(!q||(r[1]||"").includes(q)||(r[12]||"").includes(q))&&(!ag||(r[4]!=null&&r[4]<=ag))&&flOK(r)&&(!resi||r[15]===1)&&(!spec||r[16]===0));
+      let list=TX.filter(r=>(!d||r[0]===d)&&(!b||r[3]===b)&&matchQ(q,r[1],r[12])&&(!ag||(r[4]!=null&&r[4]<=ag))&&flOK(r)&&(!resi||r[15]===1)&&(!spec||r[16]===0));
       const idx={date:2,unit:10,total:11}[sk]||2;
       list.sort((a,b2)=>{if(sk==="date")return (b2[2]||"").localeCompare(a[2]||"");return (b2[idx]??-1)-(a[idx]??-1);});
       s.list=list; cnt.textContent=`符合 ${list.length.toLocaleString()} 筆`;
@@ -375,7 +379,7 @@ async function renderResale(){
   ["fD","fB","fQ","fAge","fFlag","fS","fResi","fSpec"].forEach(id=>document.getElementById(id).addEventListener("input",()=>{s.page=0;draw();}));
   draw();
 }
-function flagBadge(f){return f==='交屋'?'<span class="badge-move" title="建商→原預售買方過戶，成交價為當年預售價，非現行中古行情">預售交屋</span>'
+function flagBadge(f){return f==='交屋'?'<span class="badge-move" title="建商→原預售買方過戶，成交價為當年預售價，與預售簽約多為同一批戶">交屋過戶</span>'
   :f==='轉售'?'<span class="badge-resale" title="同一門牌第2次起成交，真正的中古市場轉售">中古轉售</span>':'';}
 // 車位格：area=車位坪 price=車位價萬 est(0實登/1回推/2無法回推含車位)
 function carCell(area,price,est){
@@ -461,7 +465,7 @@ async function renderLand(){
     <span class="count" id="cnt"></span>`;
   const draw=()=>{
     const d=fD.value,z=fZ.value,q=fQ.value.trim(),sk=fS.value;
-    let list=TX.filter(r=>(!d||r[0]===d)&&(!z||r[3]===z)&&(!q||(r[1]||"").includes(q)));
+    let list=TX.filter(r=>(!d||r[0]===d)&&(!z||r[3]===z)&&matchQ(q,r[1]));
     const idx={date:2,area:4,unit:5,total:6}[sk];
     list.sort((a,b)=>{if(sk==="date")return (b[2]||"").localeCompare(a[2]||"");return (b[idx]??-1)-(a[idx]??-1);});
     s.list=list; s.page=Math.min(s.page,Math.floor((list.length-1)/50)||0);
@@ -521,7 +525,7 @@ async function renderBargains(){
   };
   const draw=()=>{
     const d=fD.value,q=fQ.value.trim(),sk=fS.value;
-    let list=B.filter(r=>(!d||r[0]===d)&&(!q||(r[3]||"").includes(q)));
+    let list=B.filter(r=>(!d||r[0]===d)&&matchQ(q,r[3]));
     if(sk==="gap")list.sort((a,b)=>a[8]-b[8]);
     else if(sk==="date")list.sort((a,b)=>(b[2]||"").localeCompare(a[2]||""));
     else list.sort((a,b)=>a[6]-b[6]);
