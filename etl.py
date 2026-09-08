@@ -80,6 +80,9 @@ for zp in sorted(glob.glob(os.path.join(RAW, "*.zip"))):
                 "rm":int(num(r[16]) or 0),"hl":int(num(r[17]) or 0),"ba":int(num(r[18]) or 0),
                 "fl":(r[9] or "").strip(),"tf":(r[10] or "").strip(),"bt":(r[11] or "").strip(),
                 "unit":up,"total":round(t/10000) if t else None,"park":(r[23] or "").strip(),
+                "deed":round(num(r[15])/PING,1) if num(r[15]) else None,     # 權狀坪
+                "pkarea":round(num(r[24])/PING,1) if num(r[24]) else None,   # 車位坪
+                "pkprice":round(num(r[25])/10000) if num(r[25]) else None,   # 車位價(萬)
                 "resi":is_resi(use),"special":is_special(r[26] or ""),"policy":is_policy(proj),
                 "term":1 if (len(r)>30 and (r[30] or "").strip()) else 0})
     bl = read_csv_from_zip(z, "h_lvr_land_b_land.csv")
@@ -123,7 +126,11 @@ for zp in sorted(glob.glob(os.path.join(RAW, "*.zip"))):
                     "date":roc_to_ad(r[7]),"bt":(r[11] or "").strip(),"age":age if (age is not None and 0<=age<80) else None,
                     "rm":int(num(r[16]) or 0),"hl":int(num(r[17]) or 0),"ba":int(num(r[18]) or 0),
                     "fl":(r[9] or "").strip(),"tf":(r[10] or "").strip(),"use":use,"seg":seg,
+                    "zone":(r[4] or "").strip() or (r[5] or "").strip(),
                     "unit":up_adj,"total":tw,"park":(r[23] or "").strip(),"note":note,
+                    "deed":round(num(r[15])/PING,1) if num(r[15]) else None,     # 權狀坪(建物移轉總面積)
+                    "pkarea":round(num(r[24])/PING,1) if num(r[24]) else None,   # 車位坪
+                    "pkprice":round(num(r[25])/10000) if num(r[25]) else None,   # 車位價(萬)
                     "resi":is_resi(use),"special":is_special(note),"_keys":keys})
 
 # 用預售地號字典把建案名反貼到中古(標示該筆屬於哪個建案)
@@ -141,10 +148,20 @@ for r in resale:
 # (剛交屋建案的成屋紀錄多為建商成屋/交屋首購=第一手，不能算轉售)
 addr_groups = defaultdict(list)
 for r in resale:
+    r["flag"] = ""   # 預設：一般中古(無建案名的老屋)
     if r["addr"]: addr_groups[(r["d"], r["addr"])].append(r)
 resale_hit = Counter()   # 建案 -> 真二次轉售筆數
 for (d, addr), lst in addr_groups.items():
-    extra = len(lst) - 1   # 第一次為一手，其餘為轉售
+    lst.sort(key=lambda x: x["date"] or "")   # 依交易日排序，最早者為第一手
+    for i, x in enumerate(lst):
+        if i == 0:
+            # 第一手：若對得到建案名，視為「預售交屋回補」(成交價為當年預售價，非現行行情)
+            x["flag"] = "交屋" if x.get("proj") else ""
+        else:
+            x["flag"] = "轉售"   # 同門牌第2次起 = 真正的中古市場轉售
+            prev = lst[i-1]      # 上一手成交(供漲跌幅計算)
+            x["pdate"] = prev["date"]; x["punit"] = prev["unit"]; x["ptotal"] = prev["total"]
+    extra = len(lst) - 1
     if extra <= 0: continue
     projs = [x["proj"] for x in lst if x.get("proj")]
     if projs:
@@ -195,7 +212,7 @@ for (d, proj), lst in g.items():
 pprojects.sort(key=lambda x:-x["valid"])
 def dump(name,obj): json.dump(obj,open(os.path.join(DATADIR,name),"w",encoding="utf-8"),ensure_ascii=False,separators=(",",":"))
 dump("presale_projects.json", pprojects)
-dump("presale_tx.json", [[r["d"],r["proj"],r["addr"],r["date"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"],r["park"],r["term"]] for r in presale])
+dump("presale_tx.json", [[r["d"],r["proj"],r["addr"],r["date"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"],r["park"],r["term"],r.get("deed"),r.get("pkarea"),r.get("pkprice")] for r in presale])
 
 # ================= 中古：精簡(仿trueway不做舊屋) + 棟聚合 + 檢便宜 =================
 import re as _re
@@ -252,7 +269,7 @@ def gap_of(r):
     if not base: return None
     return round((u-base)/base*100)
 # resale_tx: 加 gap(13)、用途(14)、住宅(15,1/0)、特殊交易(16,1/0)，供前端顯示與過濾
-dump("resale_tx.json", [[r["d"],r["addr"],r["date"],r["bt"],r["age"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"],r.get("proj") or "",gap_of(r),r.get("use",""),1 if r.get("resi") else 0,1 if r.get("special") else 0] for r in RESALE_KEEP])
+dump("resale_tx.json", [[r["d"],r["addr"],r["date"],r["bt"],r["age"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"],r.get("proj") or "",gap_of(r),r.get("use",""),1 if r.get("resi") else 0,1 if r.get("special") else 0,r.get("zone",""),r.get("flag",""),r.get("deed"),r.get("pkarea"),r.get("pkprice"),r.get("pdate",""),r.get("punit"),r.get("ptotal")] for r in RESALE_KEEP])
 # 檢便宜：住宅、非特殊、有社區名、單價>=15、合理便宜區間(-35%~-8%)
 bargains=[]
 for r in RESALE_KEEP:

@@ -85,6 +85,8 @@
   tbody td.l{text-align:left}
   tbody tr:last-child td{border-bottom:none}
   tbody tr.prow{cursor:pointer}
+  tbody tr.rprow{cursor:pointer}
+  tbody tr.rprow:hover{background:#f0f6ff}
   tbody tr:hover{background:#f7fafc}
   .pname{font-weight:700;color:var(--navy)}
   .dist{display:inline-block;font-size:10.5px;color:var(--blue);background:var(--blue-l);border-radius:5px;padding:1.5px 7px;margin-right:6px;font-weight:600}
@@ -97,6 +99,9 @@
   table.tx th{background:#eef2f6;font-size:11px;padding:7px 10px;position:static}
   table.tx td{padding:6px 10px;font-size:12px}
   .badge-term{background:#fbe4de;color:var(--warn);font-size:10px;border-radius:4px;padding:1px 6px;font-weight:600}
+  .badge-move{background:#eef2f7;color:#5b6b7f;font-size:10px;border-radius:4px;padding:1px 6px;font-weight:600;white-space:nowrap}
+  .badge-resale{background:#e3f3ea;color:#1a8a4f;font-size:10px;border-radius:4px;padding:1px 6px;font-weight:600;white-space:nowrap}
+  .zone{display:inline-block;font-size:10px;color:#8a6d3b;background:#f6efe0;border-radius:4px;padding:1px 6px;font-weight:600}
   .loading{text-align:center;padding:60px 20px;color:var(--sub);font-size:14px}
   .pager{display:flex;gap:10px;align-items:center;justify-content:center;padding:18px;font-size:13px}
   .pager button{font:inherit;padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-weight:600;color:var(--navy)}
@@ -276,6 +281,7 @@ async function renderResale(){
     <label id="wB">建物型態<select id="fB"><option value="">全部</option>${btypes.map(b=>`<option>${b}</option>`).join("")}</select></label>
     <label>門牌/路段關鍵字<input type="text" id="fQ" placeholder="中華路、青埔、實踐"></label>
     <label id="wAge">屋齡上限<input type="number" id="fAge" placeholder="不限" style="width:80px"></label>
+    <label id="wFlag">記號<select id="fFlag"><option value="">全部</option><option value="轉售">中古轉售(真行情)</option><option value="交屋">預售交屋</option><option value="一般">一般中古</option></select></label>
     <label class="chk" id="wResi"><input type="checkbox" id="fResi" checked> 只看住宅</label>
     <label class="chk" id="wSpec"><input type="checkbox" id="fSpec" checked> 排除特殊交易</label>
     <label>排序<select id="fS"></select></label>
@@ -298,27 +304,29 @@ async function renderResale(){
         </tr></thead><tbody>${slice.map(bRow).join("")||empty(9)}</tbody></table>`+pager(list.length,pg);
     }else{
       html=`<table><thead><tr><th class="l">社區/建案</th><th class="l">門牌 / 行政區</th><th class="hidem">型態</th><th class="hidem">用途</th><th>屋齡</th><th>格局</th>
-        <th class="hidem">樓/總</th><th data-sk="unit">單價<br><small>萬/坪</small></th><th data-sk="total">總價<br><small>萬</small></th><th class="l" data-sk="date">交易日</th>
-        </tr></thead><tbody>${slice.map(rRow).join("")||empty(10)}</tbody></table>`+pager(list.length,pg);
+        <th class="hidem">權狀<br><small>坪</small></th><th class="hidem">車位<br><small>坪/萬</small></th><th class="hidem">樓/總</th><th data-sk="unit">單價<br><small>萬/坪</small></th><th data-sk="total">總價<br><small>萬</small></th><th class="l" data-sk="date">交易日</th>
+        </tr></thead><tbody>${slice.map(rRow).join("")||empty(12)}</tbody></table>`+pager(list.length,pg);
     }
     document.getElementById("tablewrap").innerHTML=html;
     const pp=document.getElementById("pp"),pn=document.getElementById("pn");
     if(pp)pp.onclick=()=>{s.page--;paint();window.scrollTo(0,0);};
     if(pn)pn.onclick=()=>{s.page++;paint();window.scrollTo(0,0);};
     if(s.mode==="bldg")document.querySelectorAll("tr.prow").forEach(tr=>tr.addEventListener("click",()=>drillBldg(tr,TX)));
+    else document.querySelectorAll("tr.rprow").forEach(tr=>tr.addEventListener("click",()=>drillPrev(tr)));
     wireSort("fS");
   };
   const draw=()=>{
     s.mode=fMode.value;
-    ["wB","wAge","wResi","wSpec"].forEach(id=>document.getElementById(id).style.display=s.mode==="bldg"?"none":"");
+    ["wB","wAge","wFlag","wResi","wSpec"].forEach(id=>document.getElementById(id).style.display=s.mode==="bldg"?"none":"");
     const d=fD.value,q=fQ.value.trim(),sk=fS.value;
     if(s.mode==="bldg"){
       let list=BLDG.filter(r=>(!d||r.d===d)&&(!q||(r.b||"").includes(q)||(r.proj||"").includes(q)));
       list.sort((a,b)=>{if(sk==="p2")return (b.p2||"").localeCompare(a.p2||"");return (b[sk]??-1)-(a[sk]??-1);});
       s.list=list; cnt.textContent=`符合 ${list.length.toLocaleString()} 棟（皆 2 筆以上成交）`;
     }else{
-      const b=fB.value,ag=+fAge.value||0,resi=fResi.checked,spec=fSpec.checked;
-      let list=TX.filter(r=>(!d||r[0]===d)&&(!b||r[3]===b)&&(!q||(r[1]||"").includes(q)||(r[12]||"").includes(q))&&(!ag||(r[4]!=null&&r[4]<=ag))&&(!resi||r[15]===1)&&(!spec||r[16]===0));
+      const b=fB.value,ag=+fAge.value||0,fl=fFlag.value,resi=fResi.checked,spec=fSpec.checked;
+      const flOK=r=>!fl||(fl==="一般"?(r[18]||"")==="":r[18]===fl);
+      let list=TX.filter(r=>(!d||r[0]===d)&&(!b||r[3]===b)&&(!q||(r[1]||"").includes(q)||(r[12]||"").includes(q))&&(!ag||(r[4]!=null&&r[4]<=ag))&&flOK(r)&&(!resi||r[15]===1)&&(!spec||r[16]===0));
       const idx={date:2,unit:10,total:11}[sk]||2;
       list.sort((a,b2)=>{if(sk==="date")return (b2[2]||"").localeCompare(a[2]||"");return (b2[idx]??-1)-(a[idx]??-1);});
       s.list=list; cnt.textContent=`符合 ${list.length.toLocaleString()} 筆`;
@@ -327,19 +335,44 @@ async function renderResale(){
     paint();
   };
   fMode.addEventListener("change",()=>{s.page=0;setSort();draw();});
-  ["fD","fB","fQ","fAge","fS","fResi","fSpec"].forEach(id=>document.getElementById(id).addEventListener("input",()=>{s.page=0;draw();}));
+  ["fD","fB","fQ","fAge","fFlag","fS","fResi","fSpec"].forEach(id=>document.getElementById(id).addEventListener("input",()=>{s.page=0;draw();}));
   draw();
 }
-function rRow(r){return `<tr>
-  <td class="l">${r[12]?`<span class="pname">${r[12]}</span>`:'<span class="muted">—</span>'}</td>
+function flagBadge(f){return f==='交屋'?'<span class="badge-move" title="建商→原預售買方過戶，成交價為當年預售價，非現行中古行情">預售交屋</span>'
+  :f==='轉售'?'<span class="badge-resale" title="同一門牌第2次起成交，真正的中古市場轉售">中古轉售</span>':'';}
+function rRow(r){
+  const resale = r[18]==='轉售' && r[22];  // 轉售且有前手 → 可點開看漲跌
+  const attr = resale ? ` class="rprow" data-cd="${r[2]}" data-cu="${r[10]??''}" data-ct="${r[11]??''}" data-pd="${r[22]}" data-pu="${r[23]??''}" data-pt="${r[24]??''}"` : '';
+  const pk = r[21]!=null ? `${r[20]!=null?r[20].toFixed(1):'—'}/${r[21].toLocaleString()}` : '<span class="muted">無</span>';
+  return `<tr${attr}>
+  <td class="l">${r[12]?`<span class="pname">${r[12]}</span>`:'<span class="muted">—</span>'} ${flagBadge(r[18])}</td>
   <td class="l"><span class="dist">${r[0]}</span>${shortAddr(r[0],r[1])}</td>
   <td class="hidem">${r[3]||''}</td>
-  <td class="hidem">${r[14]||''}${r[16]===1?' <span class="badge-term">特殊</span>':''}</td>
+  <td class="hidem">${r[14]||''}${r[17]?` <span class="zone">${r[17]}</span>`:''}${r[16]===1?' <span class="badge-term">特殊</span>':''}</td>
   <td>${r[4]!=null?r[4]+'年':'<span class="muted">—</span>'}</td>
-  <td>${r[5]}房${r[6]}廳${r[7]}衛</td><td class="hidem">${r[8]||''}/${r[9]||''}</td>
+  <td>${r[5]}房${r[6]}廳${r[7]}衛</td>
+  <td class="hidem">${r[19]!=null?r[19].toFixed(1):'<span class="muted">—</span>'}</td>
+  <td class="hidem">${pk}</td>
+  <td class="hidem">${r[8]||''}/${r[9]||''}</td>
   <td class="price">${r[10]!=null?r[10].toFixed(1):'<span class="muted">—</span>'}</td>
   <td>${r[11]!=null?r[11].toLocaleString():'<span class="muted">—</span>'}</td>
   <td class="l"><span class="rng">${r[2]||''}</span></td></tr>`;}
+function drillPrev(tr){
+  const nx=tr.nextElementSibling; if(nx&&nx.classList.contains("detail")){nx.remove();return;}
+  const d=tr.dataset, cu=+d.cu, pu=+d.pu, ct=+d.ct, pt=+d.pt;
+  const upChg=pu?(cu-pu)/pu*100:null, ptChg=pt?(ct-pt)/pt*100:null;
+  const yrs=(new Date(d.cd)-new Date(d.pd))/(365.25*864e5);
+  const sg=v=>v>0?'color:#c0392b;font-weight:700':v<0?'color:#1a8a4f;font-weight:700':'';
+  const diff=(now,prev,pct)=>pct==null?'—':`${now-prev>0?'+':''}${(now-prev).toLocaleString(undefined,{maximumFractionDigits:1})}（${pct>0?'+':''}${pct.toFixed(1)}%）`;
+  const inner=`<thead><tr><th></th><th>成交日</th><th style="text-align:right">單價萬/坪</th><th style="text-align:right">總價萬</th></tr></thead><tbody>
+    <tr><td>上一手</td><td>${d.pd}</td><td style="text-align:right">${pu||'—'}</td><td style="text-align:right">${pt?pt.toLocaleString():'—'}</td></tr>
+    <tr><td>本次轉售</td><td>${d.cd}</td><td style="text-align:right">${cu||'—'}</td><td style="text-align:right">${ct?ct.toLocaleString():'—'}</td></tr>
+    <tr><td>價差 / 漲跌幅<br><small>持有約 ${yrs.toFixed(1)} 年</small></td><td></td>
+      <td style="text-align:right;${sg(upChg)}">${diff(cu,pu,upChg)}</td>
+      <td style="text-align:right;${sg(ptChg)}">${diff(ct,pt,ptChg)}</td></tr>
+  </tbody>`;
+  insertDetail(tr,12,"上一手成交比較（同一門牌）",inner);
+}
 function bRow(r){return `<tr class="prow" data-k="${encodeURIComponent(r.d+"|"+r.b)}">
   <td class="l">${r.proj?`<span class="pname">${r.proj}</span>`:'<span class="muted">—</span>'}</td>
   <td class="l"><span class="dist">${r.d}</span>${shortAddr(r.d,r.b)}</td>
