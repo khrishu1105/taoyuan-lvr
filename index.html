@@ -93,6 +93,10 @@
   .pjc b{font-size:21px;color:var(--navy)}
   .pjc small{display:block;font-size:11px;color:var(--sub);margin-top:2px}
   .dwrap h4{margin:14px 0 6px}
+  .dwrap .handrow{display:none}
+  .dwrap.showhand .handrow{display:table-row}
+  .handtoggle{display:inline-block;font-size:12px;color:var(--sub);margin:0 0 8px;cursor:pointer}
+  .handtoggle input{vertical-align:-1px;margin-right:4px}
   tbody tr:hover{background:#f7fafc}
   .pname{font-weight:700;color:var(--navy)}
   .dist{display:inline-block;font-size:10.5px;color:var(--blue);background:var(--blue-l);border-radius:5px;padding:1.5px 7px;margin-right:6px;font-weight:600}
@@ -280,9 +284,8 @@ async function drillPresale(tr){
   const grow=(pa!=null&&ra!=null)?(ra-pa)/pa*100:null;
   const nAddr=new Set(res.map(r=>r[1]).concat(pre.map(r=>r[2])).filter(Boolean)).size;
   const stat=`<div class="pjstat">
-    <div class="pjc"><span>預售簽約</span><b>${pre.length}</b> 筆<small>${pa!=null?"均 "+A(pa):"—"}</small></div>
-    <div class="pjc"><span>交屋過戶</span><b>${hand.length}</b> 筆<small>${ha!=null?"均 "+A(ha):"—"}</small></div>
-    <div class="pjc" title="預售簽約＋交屋過戶多為同一批戶的兩次登記，故第一手戶數應以此為準，非兩者相加"><span>第一手小計</span><b style="color:var(--blue)">${pre.length+hand.length}</b> 筆<small>簽約＋過戶(同批戶)</small></div>
+    <div class="pjc" title="預售簽約與交屋過戶多為同一批戶的兩次登記（成交價相同），第一手戶數以預售簽約為準，不與交屋相加">
+      <span>第一手（首購）</span><b>${pre.length}</b> 戶<small>均 ${A(pa)}　其中 ${hand.length} 戶已交屋過戶</small></div>
     <div class="pjc"><span>中古轉售</span><b style="color:var(--resale)">${resold.length}</b> 筆<small>${ra!=null?"均 "+A(ra):"—"}</small></div>
     ${grow!=null?`<div class="pjc"><span>預售價→轉售均價</span><b style="color:${grow>0?'#c0392b':'#1a8a4f'}">${grow>0?'+':''}${grow.toFixed(0)}%</b><small>${A(pa)} → ${A(ra)}</small></div>`:''}
     <div class="pjc"><span>涵蓋門牌</span><b>${nAddr}</b> 個<small>同社區已合併</small></div>
@@ -294,13 +297,15 @@ async function drillPresale(tr){
   res.forEach(r=>all.push({date:r[2],addr:r[1],rm:r[5],hl:r[6],ba:r[7],deed:r[19],pka:r[20],pkp:r[21],unit:r[10],total:r[11],src:"成屋",flag:r[18],age:r[4],est:r[25],pd:r[22],pu:r[23],pt:r[24]}));
   all.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
   const uniRow=x=>{
+    const isHand=x.src==="成屋"&&x.flag==="交屋";
     const badge=x.src==="預售"?(x.term?'<span class="badge-term">預售·解約</span>':'<span class="badge-pre">預售簽約</span>'):flagBadge(x.flag)||'<span class="muted">成屋</span>';
     let extra="";
     if(x.flag==="轉售"&&x.pu){const cu=(x.unit-x.pu)/x.pu*100, ct=x.pt?(x.total-x.pt)/x.pt*100:null;
       extra=`<span style="color:${col(cu)}">單價${cu>0?'+':''}${cu.toFixed(1)}%</span>`+(ct!=null?` · <span style="color:${col(ct)}">總價${ct>0?'+':''}${ct.toFixed(1)}%</span> <small style="color:#999">前手${x.pd}</small>`:'');}
-    return `<tr><td>${badge}</td><td>${x.date||''}</td><td class="l">${shortAddr(d,x.addr)}</td><td>${x.age!=null?x.age+'年':'<span class="muted">—</span>'}</td><td>${x.rm}房${x.hl}廳${x.ba}衛</td><td>${x.deed!=null?x.deed.toFixed(1):'—'}</td><td>${carCell(x.pka,x.pkp,x.est)}</td><td style="text-align:right">${unitCell(x.unit,x.est)}</td><td style="text-align:right">${x.total!=null?x.total.toLocaleString():'—'}</td><td class="l">${extra}</td></tr>`;};
+    return `<tr${isHand?' class="handrow"':''}><td>${badge}</td><td>${x.date||''}</td><td class="l">${shortAddr(d,x.addr)}</td><td>${x.age!=null?x.age+'年':'<span class="muted">—</span>'}</td><td>${x.rm}房${x.hl}廳${x.ba}衛</td><td>${x.deed!=null?x.deed.toFixed(1):'—'}</td><td>${carCell(x.pka,x.pkp,x.est)}</td><td style="text-align:right">${unitCell(x.unit,x.est)}</td><td style="text-align:right">${x.total!=null?x.total.toLocaleString():'—'}</td><td class="l">${extra}</td></tr>`;};
   const note=noResale?'<p style="color:#888;margin:4px 0">單機精簡版不含成屋資料，交屋後成交請用完整站查詢。</p>':'';
-  const table=`<h4>全案歷次登錄（${all.length} 筆，最新在上）<small style="font-weight:400;color:#999">· 預售簽約與交屋過戶多為同批戶的兩次登記，非重複成交；真正的二次轉手看「中古轉售」</small></h4>
+  const table=`<h4>全案歷次登錄<small style="font-weight:400;color:#999">預售簽約 ${pre.length}．交屋過戶 ${hand.length}．中古轉售 ${resold.length}</small></h4>
+    ${hand.length?`<label class="handtoggle"><input type="checkbox" onchange="this.closest('.dwrap').classList.toggle('showhand',this.checked)">顯示交屋過戶 ${hand.length} 筆（與預售簽約為同批戶，預設隱藏避免重複）</label>`:''}
     <table class="tx"><thead><tr><th>記號</th><th>成交日</th><th class="l">門牌</th><th>屋齡</th><th>格局</th><th>權狀坪</th><th>車位坪/價</th><th style="text-align:right">單價萬/坪</th><th style="text-align:right">總價萬</th><th class="l">轉售對前手</th></tr></thead><tbody>${all.map(uniRow).join("")}</tbody></table>`;
   det.querySelector(".dwrap").innerHTML=stat+note+table;
 }
