@@ -157,7 +157,6 @@ const TABS=[
   {id:"presale",label:"預售屋",color:"var(--presale)"},
   {id:"resale", label:"中古/成屋",color:"var(--resale)"},
   {id:"land",   label:"土地",color:"var(--land)"},
-  {id:"bargain",label:"檢便宜",color:"var(--good)"},
   {id:"map",    label:"地圖",color:"var(--navy)"},
   {id:"trend",  label:"趨勢",color:"var(--blue)"},
 ];
@@ -184,7 +183,6 @@ async function boot(){
   document.getElementById("n_presale").textContent = META.presale_projects+" 案";
   document.getElementById("n_resale").textContent = (META.resale_tx/1000).toFixed(0)+"k 筆";
   document.getElementById("n_land").textContent = (META.land_tx/1000).toFixed(0)+"k 筆";
-  document.getElementById("n_bargain").textContent = (META.resale_bargains||0)+" 筆";
   document.querySelectorAll(".tab").forEach(el=>el.addEventListener("click",()=>switchTab(el.dataset.t)));
   document.getElementById("foot").innerHTML =
     `<b>近3年中位</b>：因近年房市漲幅大，全期均價會被早年低價拉低，故另計近3年(${META.recent_cut||''}起)中位單價較貼近現況，地圖顏色亦採近3年。`+
