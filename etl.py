@@ -133,16 +133,38 @@ for zp in sorted(glob.glob(os.path.join(RAW, "*.zip"))):
                     "pkprice":round(num(r[25])/10000) if num(r[25]) else None,   # 車位價(萬)
                     "resi":is_resi(use),"special":is_special(note),"_keys":keys})
 
-# 用預售地號字典把建案名反貼到中古(標示該筆屬於哪個建案)
-named_cnt = Counter()
+# ===== 社區名對照表(人工維護) =====
+# 內政部開放資料缺建案名的老社區(2018前預售、或地號沒被登記到)，在這裡用門牌前綴補上你知道的社區名。
+# 格式：門牌前綴 -> 社區名。用 startswith 比對，寫到「號」可涵蓋整棟；數字可用半形(自動對到全形)。
+# 這是貝多自建的資產，比對優先於自動地號比對(人工確認的視為 ground truth)。
+# key = 門牌可辨識片段(路名+號碼即可，如「經國二路96」)，用「包含」比對，數字可半形。
+COMMUNITY_MAP = {
+    "經國二路96": "忠泰幸",
+    "經國二路98": "忠泰幸",
+}
+def _half(s): return (s or "").translate(str.maketrans("０１２３４５６７８９","0123456789"))
+def _norm(s): return _half(s).replace(" ", "")
+_CMAP = {_norm(k): v for k, v in COMMUNITY_MAP.items()}
+def community_name(addr):
+    a = _norm(addr)
+    for key, name in _CMAP.items():
+        if key in a: return name
+    return None
+
+# 用預售地號字典把建案名反貼到中古(標示該筆屬於哪個建案)；人工對照表優先
+named_cnt = Counter(); custom_cnt = 0
 for r in resale:
-    proj = None
-    for k in r["_keys"]:
-        if k in presale_parcel: proj = presale_parcel[k]; break
+    proj = community_name(r["addr"])            # ① 人工對照表(ground truth)優先
+    r["custom_name"] = 1 if proj else 0
+    if proj: custom_cnt += 1
+    if not proj:                                 # ② 否則走自動地號比對
+        for k in r["_keys"]:
+            if k in presale_parcel: proj = presale_parcel[k]; break
     r["proj"] = proj
     r["policy"] = is_policy(proj)
     del r["_keys"]
     if proj: named_cnt[proj] += 1
+print(f"社區名對照表補上 {custom_cnt} 筆")
 
 # ===== 車位價回推：中古常「車位面積有登、車位價沒登」，導致 adj_unit_price 只扣面積不扣價→單價灌高。
 # 用同社區(建案名)同車位類別的已登車位價中位數回推，再重算去車位單價。查表也納入預售(交屋前就有車位價)。=====
@@ -298,7 +320,7 @@ def gap_of(r):
     if not base: return None
     return round((u-base)/base*100)
 # resale_tx: 加 gap(13)、用途(14)、住宅(15,1/0)、特殊交易(16,1/0)，供前端顯示與過濾
-dump("resale_tx.json", [[r["d"],r["addr"],r["date"],r["bt"],r["age"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"],r.get("proj") or "",gap_of(r),r.get("use",""),1 if r.get("resi") else 0,1 if r.get("special") else 0,r.get("zone",""),r.get("flag",""),r.get("deed"),r.get("pkarea"),r.get("pkprice"),r.get("pdate",""),r.get("punit"),r.get("ptotal"),r.get("car_est",0)] for r in RESALE_KEEP])
+dump("resale_tx.json", [[r["d"],r["addr"],r["date"],r["bt"],r["age"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"],r.get("proj") or "",gap_of(r),r.get("use",""),1 if r.get("resi") else 0,1 if r.get("special") else 0,r.get("zone",""),r.get("flag",""),r.get("deed"),r.get("pkarea"),r.get("pkprice"),r.get("pdate",""),r.get("punit"),r.get("ptotal"),r.get("car_est",0),r.get("custom_name",0)] for r in RESALE_KEEP])
 # 檢便宜：住宅、非特殊、有社區名、單價>=15、合理便宜區間(-35%~-8%)
 bargains=[]
 for r in RESALE_KEEP:

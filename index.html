@@ -110,6 +110,7 @@
   .badge-resale{background:#e3f3ea;color:#1a8a4f;font-size:10px;border-radius:4px;padding:1px 6px;font-weight:600;white-space:nowrap}
   .zone{display:inline-block;font-size:10px;color:#8a6d3b;background:#f6efe0;border-radius:4px;padding:1px 6px;font-weight:600}
   sup.umk{font-size:8px;color:#c0392b;cursor:help;margin-left:1px}
+  .badge-custom{background:#efe7fb;color:#7a4fb0;font-size:9px;border-radius:4px;padding:1px 5px;font-weight:600;margin-left:3px;cursor:help}
   .loading{text-align:center;padding:60px 20px;color:var(--sub);font-size:14px}
   .pager{display:flex;gap:10px;align-items:center;justify-content:center;padding:18px;font-size:13px}
   .pager button{font:inherit;padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-weight:600;color:var(--navy)}
@@ -379,6 +380,7 @@ async function renderResale(){
   ["fD","fB","fQ","fAge","fFlag","fS","fResi","fSpec"].forEach(id=>document.getElementById(id).addEventListener("input",()=>{s.page=0;draw();}));
   draw();
 }
+function projName(name,custom){return name?`<span class="pname">${name}</span>${custom?'<span class="badge-custom" title="貝多自建社區名（內政部開放資料無此名，人工對照）">自訂</span>':''}`:'<span class="muted">—</span>';}
 function flagBadge(f){return f==='交屋'?'<span class="badge-move" title="建商→原預售買方過戶，成交價為當年預售價，與預售簽約多為同一批戶">交屋過戶</span>'
   :f==='轉售'?'<span class="badge-resale" title="同一門牌第2次起成交，真正的中古市場轉售">中古轉售</span>':'';}
 // 車位格：area=車位坪 price=車位價萬 est(0實登/1回推/2無法回推含車位)
@@ -399,7 +401,7 @@ function rRow(r){
   const attr = resale ? ` class="rprow" data-cd="${r[2]}" data-cu="${r[10]??''}" data-ct="${r[11]??''}" data-pd="${r[22]}" data-pu="${r[23]??''}" data-pt="${r[24]??''}"` : '';
   const pk = carCell(r[20],r[21],r[25]);
   return `<tr${attr}>
-  <td class="l">${r[12]?`<span class="pname">${r[12]}</span>`:'<span class="muted">—</span>'} ${flagBadge(r[18])}</td>
+  <td class="l">${projName(r[12],r[26])} ${flagBadge(r[18])}</td>
   <td class="l"><span class="dist">${r[0]}</span>${shortAddr(r[0],r[1])}</td>
   <td class="hidem">${r[3]||''}</td>
   <td class="hidem">${r[14]||''}${r[17]?` <span class="zone">${r[17]}</span>`:''}${r[16]===1?' <span class="badge-term">特殊</span>':''}</td>
