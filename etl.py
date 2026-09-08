@@ -144,6 +144,35 @@ for r in resale:
     del r["_keys"]
     if proj: named_cnt[proj] += 1
 
+# ===== 車位價回推：中古常「車位面積有登、車位價沒登」，導致 adj_unit_price 只扣面積不扣價→單價灌高。
+# 用同社區(建案名)同車位類別的已登車位價中位數回推，再重算去車位單價。查表也納入預售(交屋前就有車位價)。=====
+park_pp=defaultdict(list); park_p=defaultdict(list); park_dp=defaultdict(list)  # (proj,類別)/(proj)/(區,類別)->車位價
+for r in resale+presale:
+    if r.get("pkprice") and r["pkprice"]>0:
+        pk=(r.get("park") or "").strip()
+        if r.get("proj"): park_pp[(r["proj"],pk)].append(r["pkprice"]); park_p[r["proj"]].append(r["pkprice"])
+        park_dp[(r["d"],pk)].append(r["pkprice"])
+def impute_car(r):
+    pk=(r.get("park") or "").strip()
+    for key,tbl in [((r.get("proj"),pk),park_pp),(r.get("proj"),park_p),((r["d"],pk),park_dp)]:
+        if key in tbl and len(tbl[key])>=2: return round(statistics.median(tbl[key]))
+    return None
+car_fix=0; car_incl=0
+for r in resale:
+    r["car_est"]=0
+    if not r.get("pkarea"): continue                         # 無車位面積→本就無車位問題
+    if r.get("pkprice") and r["pkprice"]>0: continue         # 車位價已登→正常
+    deed,pa,tw=r.get("deed"),r.get("pkarea"),r.get("total")
+    if not (deed and tw and deed>pa): continue
+    imp=impute_car(r)
+    if imp:
+        r["pkprice"]=imp; r["car_est"]=1                     # 回推成功
+        r["unit"]=round((tw-imp)/(deed-pa),2); car_fix+=1
+    else:
+        r["pkprice"]=None; r["car_est"]=2                    # 無法回推→改用含車位單價(不再灌高)
+        r["unit"]=round(tw/deed,2); car_incl+=1
+print(f"車位價回推: 修正 {car_fix} 筆、無社區資料改含車位單價 {car_incl} 筆")
+
 # 真二次轉售判定：同一完整門牌(含樓/之X)在成屋檔出現>=2次，第2次起才算轉售。
 # (剛交屋建案的成屋紀錄多為建商成屋/交屋首購=第一手，不能算轉售)
 addr_groups = defaultdict(list)
@@ -269,7 +298,7 @@ def gap_of(r):
     if not base: return None
     return round((u-base)/base*100)
 # resale_tx: 加 gap(13)、用途(14)、住宅(15,1/0)、特殊交易(16,1/0)，供前端顯示與過濾
-dump("resale_tx.json", [[r["d"],r["addr"],r["date"],r["bt"],r["age"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"],r.get("proj") or "",gap_of(r),r.get("use",""),1 if r.get("resi") else 0,1 if r.get("special") else 0,r.get("zone",""),r.get("flag",""),r.get("deed"),r.get("pkarea"),r.get("pkprice"),r.get("pdate",""),r.get("punit"),r.get("ptotal")] for r in RESALE_KEEP])
+dump("resale_tx.json", [[r["d"],r["addr"],r["date"],r["bt"],r["age"],r["rm"],r["hl"],r["ba"],r["fl"],r["tf"],r["unit"],r["total"],r.get("proj") or "",gap_of(r),r.get("use",""),1 if r.get("resi") else 0,1 if r.get("special") else 0,r.get("zone",""),r.get("flag",""),r.get("deed"),r.get("pkarea"),r.get("pkprice"),r.get("pdate",""),r.get("punit"),r.get("ptotal"),r.get("car_est",0)] for r in RESALE_KEEP])
 # 檢便宜：住宅、非特殊、有社區名、單價>=15、合理便宜區間(-35%~-8%)
 bargains=[]
 for r in RESALE_KEEP:

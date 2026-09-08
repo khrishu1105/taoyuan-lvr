@@ -108,6 +108,7 @@
   .badge-move{background:#eef2f7;color:#5b6b7f;font-size:10px;border-radius:4px;padding:1px 6px;font-weight:600;white-space:nowrap}
   .badge-resale{background:#e3f3ea;color:#1a8a4f;font-size:10px;border-radius:4px;padding:1px 6px;font-weight:600;white-space:nowrap}
   .zone{display:inline-block;font-size:10px;color:#8a6d3b;background:#f6efe0;border-radius:4px;padding:1px 6px;font-weight:600}
+  sup.umk{font-size:8px;color:#c0392b;cursor:help;margin-left:1px}
   .loading{text-align:center;padding:60px 20px;color:var(--sub);font-size:14px}
   .pager{display:flex;gap:10px;align-items:center;justify-content:center;padding:18px;font-size:13px}
   .pager button{font:inherit;padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;cursor:pointer;font-weight:600;color:var(--navy)}
@@ -282,9 +283,12 @@ async function drillPresale(tr){
   </div>`;
   const preTable=pre.length?`<h4>預售期成交（${pre.length} 筆）</h4>
     <table class="tx"><thead><tr><th>成交日</th><th class="l">門牌</th><th>格局</th><th>權狀坪</th><th>車位坪/萬</th><th style="text-align:right">單價萬/坪</th><th style="text-align:right">總價萬</th><th>狀態</th></tr></thead><tbody>${pre.map(r=>`<tr><td>${r[3]||''}</td><td class="l">${shortAddr(r[0],r[2])}</td><td>${r[4]}房${r[5]}廳${r[6]}衛</td><td>${r[13]!=null?r[13].toFixed(1):'—'}</td><td>${r[15]!=null?(r[14]!=null?r[14].toFixed(1):'—')+'/'+r[15].toLocaleString():'無'}</td><td style="text-align:right">${r[9]!=null?r[9].toFixed(1):'—'}</td><td style="text-align:right">${r[10]!=null?r[10].toLocaleString():'—'}</td><td>${r[12]?'<span class="badge-term">解約</span>':''}</td></tr>`).join("")}</tbody></table>`:'';
+  const col=v=>v>0?'#c0392b':v<0?'#1a8a4f':'#888';
   const resRow=r=>{let extra='';
-    if(r[18]==="轉售"&&r[23]){const c=(r[10]-r[23])/r[23]*100;extra=`<span style="color:${c>0?'#c0392b':c<0?'#1a8a4f':'#888'}">前手 ${r[22]} ${r[23]}→${r[10]}（${c>0?'+':''}${c.toFixed(1)}%）</span>`;}
-    return `<tr><td>${flagBadge(r[18])||'<span class="muted">—</span>'}</td><td>${r[2]||''}</td><td class="l">${shortAddr(r[0],r[1])}</td><td>${r[4]!=null?r[4]+'年':'—'}</td><td>${r[5]}房${r[6]}廳${r[7]}衛</td><td>${r[19]!=null?r[19].toFixed(1):'—'}</td><td>${r[21]!=null?(r[20]!=null?r[20].toFixed(1):'—')+'/'+r[21].toLocaleString():'無'}</td><td style="text-align:right">${r[10]!=null?r[10].toFixed(1):'—'}</td><td style="text-align:right">${r[11]!=null?r[11].toLocaleString():'—'}</td><td class="l">${extra}</td></tr>`;};
+    if(r[18]==="轉售"&&r[23]){const cu=(r[10]-r[23])/r[23]*100, ct=r[24]?(r[11]-r[24])/r[24]*100:null;
+      extra=`<span style="color:${col(cu)}">單價 ${r[23]}→${r[10]}（${cu>0?'+':''}${cu.toFixed(1)}%）</span>`
+        +(ct!=null?`<br><span style="color:${col(ct)}">總價 ${r[24].toLocaleString()}→${r[11].toLocaleString()}（${ct>0?'+':''}${ct.toFixed(1)}%）</span><br><small style="color:#999">前手 ${r[22]}</small>`:'');}
+    return `<tr><td>${flagBadge(r[18])||'<span class="muted">—</span>'}</td><td>${r[2]||''}</td><td class="l">${shortAddr(r[0],r[1])}</td><td>${r[4]!=null?r[4]+'年':'—'}</td><td>${r[5]}房${r[6]}廳${r[7]}衛</td><td>${r[19]!=null?r[19].toFixed(1):'—'}</td><td>${carCell(r[20],r[21],r[25])}</td><td style="text-align:right">${unitCell(r[10],r[25])}</td><td style="text-align:right">${r[11]!=null?r[11].toLocaleString():'—'}</td><td class="l">${extra}</td></tr>`;};
   const resTable=noResale?'<p style="color:#888;margin:8px 0">單機精簡版不含成屋資料，交屋後成交請用完整站查詢。</p>'
     :res.length?`<h4>交屋後成屋成交（${res.length} 筆：交屋 ${hand.length}．轉售 ${resold.length}）</h4>
     <table class="tx"><thead><tr><th>記號</th><th>成交日</th><th class="l">門牌</th><th>屋齡</th><th>格局</th><th>權狀坪</th><th>車位坪/萬</th><th style="text-align:right">單價萬/坪</th><th style="text-align:right">總價萬</th><th class="l">轉售對前手漲跌</th></tr></thead><tbody>${res.map(resRow).join("")}</tbody></table>`
@@ -369,10 +373,23 @@ async function renderResale(){
 }
 function flagBadge(f){return f==='交屋'?'<span class="badge-move" title="建商→原預售買方過戶，成交價為當年預售價，非現行中古行情">預售交屋</span>'
   :f==='轉售'?'<span class="badge-resale" title="同一門牌第2次起成交，真正的中古市場轉售">中古轉售</span>':'';}
+// 車位格：area=車位坪 price=車位價萬 est(0實登/1回推/2無法回推含車位)
+function carCell(area,price,est){
+  if(area==null) return '<span class="muted">無</span>';
+  if(est===2) return `${area.toFixed(1)}<span class="muted">/價未登</span>`;
+  if(est===1) return `${area.toFixed(1)}/<span title="同社區同車位類別回推估算">~${price!=null?price.toLocaleString():'?'}</span>`;
+  return `${area.toFixed(1)}/${price!=null?price.toLocaleString():'—'}`;
+}
+// 單價格：去車位單價，回推車位價標「估」、含車位標「含」
+function unitCell(u,est){
+  if(u==null) return '<span class="muted">—</span>';
+  const mk=est===1?'<sup class="umk" title="車位價由同社區回推，去車位單價為估算">估</sup>':est===2?'<sup class="umk" title="無社區車位價可回推，此為含車位單價">含</sup>':'';
+  return u.toFixed(1)+mk;
+}
 function rRow(r){
   const resale = r[18]==='轉售' && r[22];  // 轉售且有前手 → 可點開看漲跌
   const attr = resale ? ` class="rprow" data-cd="${r[2]}" data-cu="${r[10]??''}" data-ct="${r[11]??''}" data-pd="${r[22]}" data-pu="${r[23]??''}" data-pt="${r[24]??''}"` : '';
-  const pk = r[21]!=null ? `${r[20]!=null?r[20].toFixed(1):'—'}/${r[21].toLocaleString()}` : '<span class="muted">無</span>';
+  const pk = carCell(r[20],r[21],r[25]);
   return `<tr${attr}>
   <td class="l">${r[12]?`<span class="pname">${r[12]}</span>`:'<span class="muted">—</span>'} ${flagBadge(r[18])}</td>
   <td class="l"><span class="dist">${r[0]}</span>${shortAddr(r[0],r[1])}</td>
@@ -383,7 +400,7 @@ function rRow(r){
   <td class="hidem">${r[19]!=null?r[19].toFixed(1):'<span class="muted">—</span>'}</td>
   <td class="hidem">${pk}</td>
   <td class="hidem">${r[8]||''}/${r[9]||''}</td>
-  <td class="price">${r[10]!=null?r[10].toFixed(1):'<span class="muted">—</span>'}</td>
+  <td class="price">${unitCell(r[10],r[25])}</td>
   <td>${r[11]!=null?r[11].toLocaleString():'<span class="muted">—</span>'}</td>
   <td class="l"><span class="rng">${r[2]||''}</span></td></tr>`;}
 function drillPrev(tr){
