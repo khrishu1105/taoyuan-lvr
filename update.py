@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
 """自動更新：重抓最近數季內政部開放資料 → 重建 SQLite/JSON → 重產單機版。
 排程每旬(1/11/21後)執行，資料永遠新。內政部當季資料每旬累積、前一兩季可能修訂，故重抓最近3季。"""
-import os, sys, subprocess, urllib.request, datetime, ssl
+import os, sys, subprocess, urllib.request, datetime, ssl, io, zipfile
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 RAW = os.path.join(BASE, "raw")
 os.makedirs(RAW, exist_ok=True)
 URL = "https://plvr.land.moi.gov.tw/DownloadSeason?season={s}&type=zip&fileName=lvr_landcsv.zip"
+CURRENT_URLS = {
+    "A": "https://plvr.land.moi.gov.tw/opendata/lvr_landAcsv.zip",
+    "B": "https://plvr.land.moi.gov.tw/opendata/lvr_landBcsv.zip",
+}
 LOG = os.path.join(BASE, "update.log")
 
 def log(msg):
@@ -47,12 +51,46 @@ def download(season):
     except Exception as e:
         log(f"  {season}: 下載失敗 {e}"); return False
 
+def download_current(kind):
+    """保存每旬「本期」批次，不覆蓋前一期。
+
+    DownloadSeason 是季度封存檔，當季尚未封存時會回傳小型錯誤頁。
+    本期 A(買賣)/B(預售) 必須改抓 opendata 端點；ZIP 內檔案時間即
+    官方發布日，用它建立唯一檔名，讓每月 1/11/21 日的批次可累積。
+    """
+    url = CURRENT_URLS[kind]
+    try:
+        ctx = ssl.create_default_context(); ctx.check_hostname=False; ctx.verify_mode=ssl.CERT_NONE
+        req = urllib.request.Request(url, headers={"User-Agent":"Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=120, context=ctx) as r:
+            data = r.read()
+        if len(data) < 50000:
+            log(f"  本期{kind}: 回傳過小({len(data)}B)，略過"); return False
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            expected = f"h_lvr_land_{kind.lower()}.csv"
+            if not any(name.lower().endswith(expected) for name in z.namelist()):
+                log(f"  本期{kind}: ZIP 缺少桃園 {expected}，略過"); return False
+            stamp = datetime.date(*z.getinfo("build_time.xml").date_time[:3])
+        roc = stamp.year - 1911
+        batch = f"{roc:03d}Z{stamp:%Y%m%d}{kind}"
+        dst = os.path.join(RAW, batch + ".zip")
+        tmp = dst + ".tmp"
+        with open(tmp, "wb") as f: f.write(data)
+        os.replace(tmp, dst)
+        log(f"  本期{kind}: 已保存 {batch} ({len(data)//1024} KB)")
+        return True
+    except Exception as e:
+        log(f"  本期{kind}: 下載失敗 {e}"); return False
+
 def main():
     log("=== 開始自動更新 ===")
     seasons = recent_seasons(3)
     log(f"重抓最近季別: {seasons}")
     got = sum(download(s) for s in seasons)
     log(f"成功更新 {got}/{len(seasons)} 季")
+    log("抓取本期每旬批次: A(買賣) / B(預售)")
+    current_got = sum(download_current(kind) for kind in ("A", "B"))
+    log(f"成功保存 {current_got}/2 個本期批次")
     log("重建資料庫 (etl.py)…")
     subprocess.run([sys.executable, os.path.join(BASE, "etl.py")], check=True)
     log("重產單機版 (build_standalone.py)…")

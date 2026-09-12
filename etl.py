@@ -112,7 +112,7 @@ for zp in sorted(glob.glob(os.path.join(RAW, "*.zip"))):
                 area = num(r[3]); area_ping = round(area/PING,1) if area else None
                 land.append({"season":season,"d":r[0].strip(),"addr":(r[2] or "").strip(),
                     "date":roc_to_ad(r[7]),"zone":(r[4] or "").strip() or (r[5] or "").strip(),
-                    "area":area_ping,"unit":up,"total":tw})
+                    "area":area_ping,"unit":up,"total":tw,"eid":(r[27] or "").strip()})
             elif "建物" in target:
                 by = roc_year(r[14])
                 age = (ad_year - by) if by else None
@@ -123,6 +123,7 @@ for zp in sorted(glob.glob(os.path.join(RAW, "*.zip"))):
                 use = (r[12] or "").strip(); note=(r[26] or "").strip()
                 segs=[s for (_,s,_) in keys]; seg=Counter(segs).most_common(1)[0][0] if segs else ""
                 resale.append({"season":season,"d":d,"addr":(r[2] or "").strip(),
+                    "eid":eid,
                     "date":roc_to_ad(r[7]),"bt":(r[11] or "").strip(),"age":age if (age is not None and 0<=age<80) else None,
                     "rm":int(num(r[16]) or 0),"hl":int(num(r[17]) or 0),"ba":int(num(r[18]) or 0),
                     "fl":(r[9] or "").strip(),"tf":(r[10] or "").strip(),"use":use,"seg":seg,
@@ -132,6 +133,31 @@ for zp in sorted(glob.glob(os.path.join(RAW, "*.zip"))):
                     "pkarea":round(num(r[24])/PING,1) if num(r[24]) else None,   # 車位坪
                     "pkprice":round(num(r[25])/10000) if num(r[25]) else None,   # 車位價(萬)
                     "resi":is_resi(use),"special":is_special(note),"_keys":keys})
+
+# ===== 跨批次去重 =====
+# 本期資料每月 1/11/21 日各是一個增量批次；季度封存後又會再次包含相同案件。
+# 檔名排序保證季度檔(S)先、本期檔(Z)後，遇到相同編號時保留後讀到的版本，
+# 讓解約/備註等後續修訂可以覆蓋舊資料。
+def dedupe_rows(rows, kind):
+    unique = {}
+    for r in rows:
+        eid = (r.get("eid") or "").strip()
+        if eid:
+            key = ("id", r.get("d"), eid)
+        elif kind == "presale":
+            key = ("fallback", r.get("d"), r.get("proj"), r.get("addr"), r.get("date"), r.get("total"), r.get("fl"))
+        elif kind == "resale":
+            key = ("fallback", r.get("d"), r.get("addr"), r.get("date"), r.get("total"), r.get("bt"), r.get("fl"))
+        else:
+            key = ("fallback", r.get("d"), r.get("addr"), r.get("date"), r.get("total"), r.get("area"))
+        unique[key] = r
+    removed = len(rows) - len(unique)
+    print(f"跨批次去重 {kind}: 移除 {removed:,} 筆重複")
+    return list(unique.values())
+
+presale = dedupe_rows(presale, "presale")
+resale = dedupe_rows(resale, "resale")
+land = dedupe_rows(land, "land")
 
 # ===== 社區名對照表(人工維護) =====
 # 內政部開放資料缺建案名的老社區(2018前預售、或地號沒被登記到)，在這裡用門牌前綴補上你知道的社區名。
@@ -190,6 +216,7 @@ if os.path.isdir(RT_DIR):
             seen.add(key)
             fp = (x.get("floor") or "").split("/")
             resale.append({"season":"RT","d":d,"addr":addr,"date":x["date"],
+                "eid":"",
                 "bt":x.get("bt",""),"age":None,"rm":_lay(x.get("rm_layout"),"房"),
                 "hl":_lay(x.get("rm_layout"),"廳"),"ba":_lay(x.get("rm_layout"),"衛"),
                 "fl":fp[0] if fp else "","tf":fp[1] if len(fp)>1 else "",
@@ -532,20 +559,36 @@ zone_tx={"presale":zone_tx_build([x for x in presale if not x["term"]]),
 dump("zone_tx.json", zone_tx)
 
 # ================= meta =================
-seasons=sorted(set([r["season"] for r in presale]+[r["season"] for r in resale]+[r["season"] for r in land]))
-districts=sorted(set([r["d"] for r in presale]+[r["d"] for r in resale]+[r["d"] for r in land]))
+all_sources=set([r["season"] for r in presale]+[r["season"] for r in resale]+[r["season"] for r in land])
+seasons=sorted(s for s in all_sources if "Z" not in s)
+current_batches=sorted(s for s in all_sources if "Z" in s)
+districts=sorted(d for d in set([r["d"] for r in presale]+[r["d"] for r in resale]+[r["d"] for r in land]) if d)
 def rng(rows):  # 過濾明顯髒日期(<2000)，回傳真實 min/max
     ds=sorted(x["date"] for x in rows if x["date"] and x["date"]>="2000-01-01")
     return (ds[0], ds[-1]) if ds else (None, None)
+def source_rng(rows,predicate):
+    return rng([x for x in rows if predicate(x.get("season", ""))])
 p_min,p_max=rng(presale); r_min,r_max=rng(RESALE_KEEP); l_min,l_max=rng(land)
+sp_min,sp_max=source_rng(presale,lambda s:"Z" not in s and s!="RT")
+sr_min,sr_max=source_rng(RESALE_KEEP,lambda s:"Z" not in s and s!="RT")
+sl_min,sl_max=source_rng(land,lambda s:"Z" not in s and s!="RT")
+cp_min,cp_max=source_rng(presale,lambda s:"Z" in s)
+cr_min,cr_max=source_rng(RESALE_KEEP,lambda s:"Z" in s)
+cl_min,cl_max=source_rng(land,lambda s:"Z" in s)
 alldates=[d for d in (p_min,p_max,r_min,r_max,l_min,l_max) if d]
-meta={"seasons":seasons,"districts":districts,
+meta={"seasons":seasons,"current_batches":current_batches,"districts":districts,
     "presale_tx":len(presale),"presale_projects":len(pprojects),"presale_term":sum(r["term"] for r in presale),
     "resale_tx":len(RESALE_KEEP),"resale_tx_all":len(resale),"land_tx":len(land),
     "resale_named":sum(1 for x in RESALE_KEEP if x.get("proj")),"resale_named_projects":len(named_cnt),
     "resale_resold":sum(resale_hit.values()),
     "resale_bargains":len(bargains[:2000]),"recent_cut":RECENT_CUT,
     "presale_min":p_min,"presale_max":p_max,"resale_min":r_min,"resale_max":r_max,"land_min":l_min,"land_max":l_max,
+    "seasonal_presale_min":sp_min,"seasonal_presale_max":sp_max,
+    "seasonal_resale_min":sr_min,"seasonal_resale_max":sr_max,
+    "seasonal_land_min":sl_min,"seasonal_land_max":sl_max,
+    "current_presale_min":cp_min,"current_presale_max":cp_max,
+    "current_resale_min":cr_min,"current_resale_max":cr_max,
+    "current_land_min":cl_min,"current_land_max":cl_max,
     "date_min":min(alldates),"date_max":max(alldates),
     "updated_at":datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}
 json.dump(meta,open(os.path.join(DATADIR,"meta.json"),"w",encoding="utf-8"),ensure_ascii=False,indent=1)
