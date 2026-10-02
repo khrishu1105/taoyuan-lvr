@@ -64,7 +64,7 @@
  "resale_tx_all": 314051,
  "land_tx": 86641,
  "resale_named": 98872,
- "resale_named_projects": 1025,
+ "resale_named_projects": 1024,
  "resale_resold": 6227,
  "resale_bargains": 2000,
  "recent_cut": "2023-08-21",
@@ -88,5 +88,5 @@
  "current_land_max": "2026-08-18",
  "date_min": "2002-07-01",
  "date_max": "2026-08-21",
- "updated_at": "2026-09-22 10:11"
+ "updated_at": "2026-10-02 10:12"
 }
